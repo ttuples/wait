@@ -20,6 +20,17 @@ impl std::fmt::Display for PathError {
 
 impl std::error::Error for PathError {}
 
+#[derive(Debug, Clone)]
+pub struct AlreadyLoggedInError;
+
+impl std::fmt::Display for AlreadyLoggedInError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "Already logged in")
+    }
+}
+
+impl std::error::Error for AlreadyLoggedInError {}
+
 static STEAM_ROOT: &str = r"Software\Valve\Steam";
 
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
@@ -169,7 +180,6 @@ impl SteamModel {
         // Add directories from libraryfolders.vdf
         let re = Regex::new(r"^[0-9]+$").unwrap();
         for (key, value) in libfolder_data.as_object().unwrap() {
-            println!("Key: {}", key);
             if re.is_match(key) {
                 let path = value.get("path").unwrap().as_str().unwrap();
                 let apps: Vec<i64> = value.get("apps").unwrap().as_object().unwrap().keys().map(|x| x.parse().unwrap()).collect();
@@ -234,19 +244,23 @@ impl SteamModel {
         Ok((portrait, landscape))
     }
 
-    pub fn login(&self, account: &SteamAccount) -> Result<(), Box<dyn std::error::Error>> {
-        let mut regkey = Hive::CurrentUser.open(STEAM_ROOT, Security::Write)?;
+    pub fn set_login_account(&self, account: &SteamAccount) -> Result<(), Box<dyn std::error::Error>> {
+        let mut regkey = Hive::CurrentUser.open(STEAM_ROOT, Security::AllAccess)?;
 
         if regkey.value("AutoLoginUser")?.to_string() == account.name {
-            return Ok(());
+            return Err(Box::new(AlreadyLoggedInError));
         }
-
-        let steam_exe = self.path.join("steam.exe");
 
         // Set AutoLoginUser and RememberPassword
         let user_data: Data = Data::String(utfx::WideCString::from_str(&account.name).unwrap().into());
         regkey.set_value("AutoLoginUser", &user_data)?;
         regkey.set_value("RememberPassword", &Data::U32(1))?;
+
+        Ok(())
+    }
+
+    pub fn run(&self, args: Option<Vec<String>>) -> Result<(), Box<dyn std::error::Error>> {
+        let steam_exe = self.path.join("steam.exe");
 
         // Spawn thread to start steam
         std::thread::spawn(move || {
@@ -266,8 +280,39 @@ impl SteamModel {
             }
 
             // Start steam
-            std::process::Command::new(steam_exe).spawn().unwrap();
+            std::process::Command::new(steam_exe)
+                .args(args.unwrap_or(vec![]))
+                .spawn().unwrap();
         });
+
+        Ok(())
+    }
+    
+    pub fn login(&self, account: &SteamAccount) -> Result<(), Box<dyn std::error::Error>> {
+        match self.set_login_account(account) {
+            Ok(_) => (),
+            Err(e) => {
+                if e.downcast_ref::<AlreadyLoggedInError>().is_some() {
+                    return Ok(());
+                }
+            },
+        }
+
+        self.run(None)?;
+
+        Ok(())
+    }
+
+    pub fn launch_game(&self, account: &SteamAccount, appid: &i32) -> Result<(), Box<dyn std::error::Error>> {
+        self.set_login_account(account)?;
+
+        let mut args = vec![
+            "-noreactlogin".to_string(),
+            "-applaunch".to_string(),
+            appid.to_string(),
+        ];
+
+        self.run(Some(args))?;
 
         Ok(())
     }

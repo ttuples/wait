@@ -1,5 +1,4 @@
-use std::path::Path;
-use std::rc::Rc;
+use std::{path::Path, rc::Rc};
 use slint::{spawn_local, Image, Model, ModelRc, Rgba8Pixel, SharedPixelBuffer, SharedString, VecModel};
 use utils::steam;
 use async_channel::unbounded;
@@ -24,14 +23,13 @@ impl ThumbnailChannel {
 #[derive(Debug, Clone)]
 pub struct ThumbnailData(i32, (Option<SharedPixelBuffer<Rgba8Pixel>>, Option<SharedPixelBuffer<Rgba8Pixel>>));
 
-
 #[tokio::main]
 async fn main() -> Result<(), slint::PlatformError> {
     // ---------- Steam ----------
     let mut steam_model = steam::SteamModel::new().unwrap();
     println!("Steam path: {:?}", steam_model.path);
 
-    println!("{:?}", steam_model.detect_accounts().unwrap());
+    steam_model.detect_accounts().unwrap();
 
     let _games = match steam_model.detect_installs(steam_model.path.clone()) {
         Ok(games) => {
@@ -44,8 +42,11 @@ async fn main() -> Result<(), slint::PlatformError> {
         }
     };
 
+    // let portrait_buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(PORTRAIT_BYTES, 300, 450);
+    // let landscape_buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(LANDSCAPE_BYTES, 460, 215);
     let default_portrait = slint::Image::load_from_path(Path::new("./data/default_portrait.png")).unwrap();
     let default_landscape = slint::Image::load_from_path(Path::new("./data/default_landscape.png")).unwrap();
+
     let game_vec: Vec<Game> = _games.iter().map(|(id, name)| {
         Game {
             id: *id,
@@ -59,6 +60,8 @@ async fn main() -> Result<(), slint::PlatformError> {
     // ---------- Setup UI ----------
     let app = AppWindow::new()?;
 
+    app.global::<AppAdapter>().set_accounts(ModelRc::from(Rc::new(VecModel::<SharedString>::from(steam_model.user_cache.iter().map(|account| SharedString::from(account.name.clone())).collect::<Vec<SharedString>>()))));
+
     app.global::<AppAdapter>().set_games(ModelRc::from(games_model.clone()));
 
     app.global::<AppAdapter>().on_game_selected({
@@ -69,8 +72,6 @@ async fn main() -> Result<(), slint::PlatformError> {
             let app_handle = app_handle.upgrade().unwrap();
 
             let game = games_handle.iter().find(|game| game.id == game_id).unwrap();
-            println!("Selected game: {}", game.id);
-            println!("Selected game: {}", game.name);
 
             let game_accounts = steam_handle.user_cache.iter().filter_map(|account| {
                 if account.games.contains(&game_id) {
@@ -83,15 +84,21 @@ async fn main() -> Result<(), slint::PlatformError> {
             println!("Game accounts: {:?}", game_accounts);
 
             app_handle.global::<AppAdapter>().set_selected_game(game.clone());
+            app_handle.global::<AppAdapter>().set_selected_account(SharedString::from(game_accounts.first().unwrap().clone()));
             app_handle.global::<AppAdapter>().set_optional_accounts(ModelRc::from(Rc::new(VecModel::<SharedString>::from(game_accounts))));
         }
     });
 
-    app.global::<AppAdapter>().on_debug({
-        // let app_handle = app.as_weak();
-        move || {
-            // let app_handle = app_handle.upgrade().unwrap();
-            println!("Debug clicked");
+    app.global::<AppAdapter>().on_game_launch({
+        let steam_handle = steam_model.clone();
+        move |game, account_name| {
+            println!("Launching game: {} with account: {}", game.id, account_name);
+
+            let account = steam_handle.user_cache.iter().find(|account| account.name == account_name.as_str()).unwrap();
+            println!("Account: {:?}", account);
+
+            let result = steam_handle.launch_game(&account, &game.id);
+            println!("Launch result: {:?}", result);
         }
     });
 
@@ -107,6 +114,22 @@ async fn main() -> Result<(), slint::PlatformError> {
 
             let result = steam_handle.login(account);
             println!("Login result: {:?}", result);
+        }
+    });
+
+    app.global::<AppAdapter>().on_steamdb_open({
+        move |game| {
+            println!("Opening SteamDB for game: {}", game.id);
+            let url = format!("https://steamdb.info/app/{}", game.id);
+            open::that(url).unwrap();
+        }
+    });
+
+    app.global::<AppAdapter>().on_debug({
+        // let app_handle = app.as_weak();
+        move || {
+            // let app_handle = app_handle.upgrade().unwrap();
+            println!("Debug clicked");
         }
     });
 
@@ -146,30 +169,6 @@ async fn main() -> Result<(), slint::PlatformError> {
                                 games_handle.set_row_data(index, new_game.clone());
                             }
                         }
-                        // for (index, game) in games_handle.iter().enumerate() {
-                        //     if game.id == image_data.0 {
-                        //         let mut portrait: Image = default_portrait.clone();
-                        //         let mut landscape: Image = default_landscape.clone();
-
-                        //         let buffers = image_data.clone().1;
-                                
-                        //         if let Some(image) = buffers.0 {
-                        //             portrait = Image::from_rgba8(image);
-                        //         }
-
-                        //         if let Some(image) = buffers.1 {
-                        //             landscape = Image::from_rgba8(image);
-                        //         }
-
-                        //         let mut new_game = game.clone();
-                        //         new_game.thumbnail = Thumbnail {
-                        //             portrait: portrait.clone(),
-                        //             landscape: landscape.clone(),
-                        //         };
-
-                        //         games_handle.set_row_data(index, new_game.clone());
-                        //     }
-                        // }
                     },
                     Err(e) => {
                         eprintln!("Failed to receive thumbnail: {:?}", e);

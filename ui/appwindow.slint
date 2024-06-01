@@ -1,4 +1,4 @@
-import { Button, VerticalBox, ScrollView, GridBox, HorizontalBox, ComboBox } from "std-widgets.slint";
+import { Button, VerticalBox, ScrollView, GridBox, HorizontalBox, ComboBox, LineEdit, TextEdit } from "std-widgets.slint";
 
 struct Thumbnail {
     portrait: image,
@@ -20,7 +20,22 @@ export component GameComponent inherits Rectangle {
         height: parent.height;
     }
 
+    // if AppAdapter.portrait_mode ? (if game.thumbnail.portrait == AppAdapter.default_portrait ? false : true) : if game.thumbnail.landscape == AppAdapter.default_landscape : true : false {
+    //     TextEdit {
+    //         text: game.name;
+    //         width: parent.width;
+    //         height: 40px;
+    //         font-size: 16px;
+    //         background-color: "transparent";
+    //         text-color: "white";
+    //         horizontal-alignment: TextAlignment.center;
+    //         vertical-alignment: TextAlignment.center;
+    //     }
+    // }
+
     TouchArea {
+        x: 0;
+        y: 0;
         width: parent.width;
         height: parent.height;
 
@@ -31,15 +46,13 @@ export component GameComponent inherits Rectangle {
 }
 
 export component AccountSwitcher inherits Rectangle {
-    in-out property <bool> has-focus: false;
-    
     VerticalLayout {
         spacing: 5px;
 
         account := ComboBox {
             width: parent.width;
             height: 40px;
-            model: AppAdapter.optional_accounts;
+            model: AppAdapter.accounts;
 
             selected() => {
                 self.clear-focus();
@@ -58,20 +71,69 @@ export component AccountSwitcher inherits Rectangle {
     }
 }
 
+export component GameInfo inherits Rectangle {
+    VerticalLayout {
+        spacing: 5px;
+
+        Image {
+            source: AppAdapter.portrait_mode ? AppAdapter.selected_game.thumbnail.portrait : AppAdapter.selected_game.thumbnail.landscape;
+            width: parent.width;
+            height: 200px;
+            image-fit: ImageFit.contain;
+        }
+
+        account := ComboBox {
+            width: parent.width;
+            height: 30px;
+            model: AppAdapter.optional_accounts;
+            current-value: AppAdapter.selected_account;
+
+            selected(account) => {
+                AppAdapter.selected_account = account;
+                self.clear-focus();
+            }
+        }
+
+        HorizontalLayout {
+            width: parent.width;
+            height: 40px;
+            spacing: 5px;
+
+            Button {
+                text: "Launch";
+                clicked => {
+                    AppAdapter.game-launch(AppAdapter.selected_game, account.current-value);
+                }
+            }
+
+            Button {
+                text: "SteamDB";
+                clicked => {
+                    AppAdapter.steamdb-open(AppAdapter.selected_game);
+                }
+            }
+        }
+    }
+}
+
 export global AppAdapter {
     in property <[string]> accounts;
+    in property <image> default_portrait;
+    in property <image> default_landscape;
 
     in property <[Game]> games;
     in property <bool> portrait_mode: true;
 
     in property <Game> selected_game;
     in property <[string]> optional_accounts;
-    
-    // out property <int> selected_account;
+    in-out property <string> selected_account;
+
     out property <int> thumbnail_size: 100;
 
     callback game-selected(int);
+    callback game-launch(Game, string);
     callback account-login(string);
+    callback steamdb-open(Game);
 
     callback debug();
 }
@@ -88,9 +150,9 @@ export component AppWindow inherits Window {
             width: 300px;
             height: 100%;
 
-            AccountSwitcher {
-                height: 50px;
-            }
+            AccountSwitcher {}
+
+            GameInfo {}
         }
 
         VerticalLayout {
@@ -101,25 +163,16 @@ export component AppWindow inherits Window {
                 width: parent.width;
                 height: 50px;
 
-                Button {
-                    text: "Debug";
-                    width: 80px;
-                    clicked => {
-                        AppAdapter.debug();
-                    }
+                LineEdit {
+                    text: "";
+                    placeholder-text: "Search...";
+                    font-size: 16px;
                 }
 
                 Button {
-                    text: "Portrait";
+                    text: "Layout";
                     clicked => {
-                        AppAdapter.portrait_mode = true;
-                    }
-                }
-
-                Button {
-                    text: "Landscape";
-                    clicked => {
-                        AppAdapter.portrait_mode = false;
+                        AppAdapter.portrait_mode = !AppAdapter.portrait_mode;
                     }
                 }
             }
