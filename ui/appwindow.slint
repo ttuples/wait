@@ -1,16 +1,112 @@
-import { Button, VerticalBox } from "std-widgets.slint";
+import { Button, VerticalBox, ScrollView, GridBox, HorizontalBox } from "std-widgets.slint";
+
+struct Thumbnail {
+    portrait: image,
+    landscape: image,
+}
+
+struct Game {
+    id: int,
+    name: string,
+    thumbnail: Thumbnail,
+}
+
+struct Account {
+    id: int,
+    name: string,
+}
+
+export component GameComponent inherits Rectangle {
+    in-out property <Game> game;
+
+    Image {
+        source: AppAdapter.portrait_mode ? game.thumbnail.portrait : game.thumbnail.landscape;
+        width: parent.width;
+        height: parent.height;
+    }
+
+    TouchArea {
+        width: parent.width;
+        height: parent.height;
+
+        clicked => {
+            AppAdapter.game-selected(game.id);
+        }
+    }
+}
+
+export global AppAdapter {
+    in property <[Account]> accounts;
+
+    in property <[Game]> games;
+    in property <bool> portrait_mode: true;
+
+    in property <Game> selected_game;
+    in property <[Account]> optional_accounts;
+
+    out property <int> thumbnail_size: 100;
+
+    callback game-selected(int);
+
+    callback debug();
+}
 
 export component AppWindow inherits Window {
-    in-out property<int> counter: 42;
-    callback request-increase-value();
-    VerticalBox {
-        Text {
-            text: "Counter: \{root.counter}";
+    min-width: 1280px;
+    min-height: 720px;
+
+    VerticalLayout {
+        HorizontalBox {
+            width: 100%;
+            height: 50px;
+
+            Button {
+                text: "Debug";
+                width: 80px;
+                clicked => {
+                    AppAdapter.debug();
+                }
+            }
+
+            Button {
+                text: "Portrait";
+                clicked => {
+                    AppAdapter.portrait_mode = true;
+                }
+            }
+
+            Button {
+                text: "Landscape";
+                clicked => {
+                    AppAdapter.portrait_mode = false;
+                }
+            }
         }
-        Button {
-            text: "Increase value";
-            clicked => {
-                root.request-increase-value();
+
+        ScrollView {
+            width: 100%;
+            height: parent.height - 50px;
+
+            property <int> columns: floor((parent.width + 5px) / (AppAdapter.thumbnail_size * 1px + 5px));
+
+            VerticalLayout {
+                spacing: 5px;
+
+                for _row in ceil(AppAdapter.games.length / columns) : HorizontalLayout {
+                    alignment: LayoutAlignment.center;
+                    spacing: 5px;
+
+                    for _col in columns : Rectangle {
+                        width: AppAdapter.thumbnail_size * 1px;
+                        height: AppAdapter.portrait_mode ? (AppAdapter.thumbnail_size * 1.5) * 1px : (AppAdapter.thumbnail_size * 0.467) * 1px;
+
+                        property <int> index: _row * columns + _col;
+
+                        if index < AppAdapter.games.length : GameComponent {
+                            game: AppAdapter.games[index];
+                        }
+                    }
+                }
             }
         }
     }

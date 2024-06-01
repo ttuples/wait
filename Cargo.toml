@@ -8,6 +8,11 @@ build = "build.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+async-channel = "2.3.1"
+image = "0.25.1"
+regex = "1.10.4"
+registry = "1.2.3"
+serde_json = "1.0.117"
 slint = "1.6"
 tokio = { version = "1.37.0", features = ["full"] }
 
