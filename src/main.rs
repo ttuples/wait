@@ -28,7 +28,7 @@ pub struct ThumbnailData(i32, (Option<SharedPixelBuffer<Rgba8Pixel>>, Option<Sha
 #[tokio::main]
 async fn main() -> Result<(), slint::PlatformError> {
     // ---------- Steam ----------
-    let mut steam_model = steam::SteamData::new().unwrap();
+    let mut steam_model = steam::SteamModel::new().unwrap();
     println!("Steam path: {:?}", steam_model.path);
 
     println!("{:?}", steam_model.detect_accounts().unwrap());
@@ -63,16 +63,50 @@ async fn main() -> Result<(), slint::PlatformError> {
 
     app.global::<AppAdapter>().on_game_selected({
         let games_handle = games_model.clone();
+        let app_handle = app.as_weak();
+        let steam_handle = steam_model.clone();
         move |game_id| {
+            let app_handle = app_handle.upgrade().unwrap();
+
             let game = games_handle.iter().find(|game| game.id == game_id).unwrap();
             println!("Selected game: {}", game.id);
             println!("Selected game: {}", game.name);
+
+            let game_accounts = steam_handle.user_cache.iter().filter_map(|account| {
+                if account.games.contains(&game_id) {
+                    Some(SharedString::from(account.name.clone()))
+                } else {
+                    None
+                }
+            }).collect::<Vec<SharedString>>();
+
+            println!("Game accounts: {:?}", game_accounts);
+
+            app_handle.global::<AppAdapter>().set_selected_game(game.clone());
+            app_handle.global::<AppAdapter>().set_optional_accounts(ModelRc::from(Rc::new(VecModel::<SharedString>::from(game_accounts))));
         }
     });
 
     app.global::<AppAdapter>().on_debug({
+        // let app_handle = app.as_weak();
         move || {
+            // let app_handle = app_handle.upgrade().unwrap();
             println!("Debug clicked");
+        }
+    });
+
+    app.global::<AppAdapter>().on_account_login({
+        let app_handle = app.as_weak();
+        let steam_handle = steam_model.clone();
+        move |account_name| {
+            let _app_handle = app_handle.upgrade().unwrap();
+            println!("Logging into account: {}", account_name);
+
+            let account = steam_handle.user_cache.iter().find(|account| account.name == account_name.as_str()).unwrap();
+            println!("Account: {:?}", account);
+
+            let result = steam_handle.login(account);
+            println!("Login result: {:?}", result);
         }
     });
 
@@ -173,8 +207,8 @@ async fn main() -> Result<(), slint::PlatformError> {
                                     let buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(&image_data.as_raw(), image_data.width(), image_data.height());
                                     Some(buffer)
                                 },
-                                Err(e) => {
-                                    eprintln!("Failed to open image: {:?}", e);
+                                Err(_e) => {
+                                    // eprintln!("Failed to open image: {:?}", e);
                                     None
                                 }
                             }
@@ -190,8 +224,8 @@ async fn main() -> Result<(), slint::PlatformError> {
                                     let buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(&image_data.as_raw(), image_data.width(), image_data.height());
                                     Some(buffer)
                                 },
-                                Err(e) => {
-                                    eprintln!("Failed to open image: {:?}", e);
+                                Err(_e) => {
+                                    // eprintln!("Failed to open image: {:?}", e);
                                     None
                                 }
                             }

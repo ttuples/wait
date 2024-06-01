@@ -1,4 +1,4 @@
-import { Button, VerticalBox, ScrollView, GridBox, HorizontalBox } from "std-widgets.slint";
+import { Button, VerticalBox, ScrollView, GridBox, HorizontalBox, ComboBox } from "std-widgets.slint";
 
 struct Thumbnail {
     portrait: image,
@@ -9,11 +9,6 @@ struct Game {
     id: int,
     name: string,
     thumbnail: Thumbnail,
-}
-
-struct Account {
-    id: int,
-    name: string,
 }
 
 export component GameComponent inherits Rectangle {
@@ -35,18 +30,48 @@ export component GameComponent inherits Rectangle {
     }
 }
 
+export component AccountSwitcher inherits Rectangle {
+    in-out property <bool> has-focus: false;
+    
+    VerticalLayout {
+        spacing: 5px;
+
+        account := ComboBox {
+            width: parent.width;
+            height: 40px;
+            model: AppAdapter.optional_accounts;
+
+            selected() => {
+                self.clear-focus();
+            }
+        }
+
+        Button {
+            text: "Login";
+            width: parent.width;
+            height: 40px;
+
+            clicked => {
+                AppAdapter.account-login(account.current-value);
+            }
+        }
+    }
+}
+
 export global AppAdapter {
-    in property <[Account]> accounts;
+    in property <[string]> accounts;
 
     in property <[Game]> games;
     in property <bool> portrait_mode: true;
 
     in property <Game> selected_game;
-    in property <[Account]> optional_accounts;
-
+    in property <[string]> optional_accounts;
+    
+    // out property <int> selected_account;
     out property <int> thumbnail_size: 100;
 
     callback game-selected(int);
+    callback account-login(string);
 
     callback debug();
 }
@@ -55,55 +80,72 @@ export component AppWindow inherits Window {
     min-width: 1280px;
     min-height: 720px;
 
-    VerticalLayout {
-        HorizontalBox {
-            width: 100%;
-            height: 50px;
+    HorizontalLayout {
+        width: 100%;
+        height: 100%;
 
-            Button {
-                text: "Debug";
-                width: 80px;
-                clicked => {
-                    AppAdapter.debug();
-                }
-            }
+        VerticalBox {
+            width: 300px;
+            height: 100%;
 
-            Button {
-                text: "Portrait";
-                clicked => {
-                    AppAdapter.portrait_mode = true;
-                }
-            }
-
-            Button {
-                text: "Landscape";
-                clicked => {
-                    AppAdapter.portrait_mode = false;
-                }
+            AccountSwitcher {
+                height: 50px;
             }
         }
 
-        ScrollView {
-            width: 100%;
-            height: parent.height - 50px;
+        VerticalLayout {
+            width: parent.width - 300px;
+            height: 100%;
 
-            property <int> columns: floor((parent.width + 5px) / (AppAdapter.thumbnail_size * 1px + 5px));
+            HorizontalBox {
+                width: parent.width;
+                height: 50px;
 
-            VerticalLayout {
-                spacing: 5px;
+                Button {
+                    text: "Debug";
+                    width: 80px;
+                    clicked => {
+                        AppAdapter.debug();
+                    }
+                }
 
-                for _row in ceil(AppAdapter.games.length / columns) : HorizontalLayout {
-                    alignment: LayoutAlignment.center;
+                Button {
+                    text: "Portrait";
+                    clicked => {
+                        AppAdapter.portrait_mode = true;
+                    }
+                }
+
+                Button {
+                    text: "Landscape";
+                    clicked => {
+                        AppAdapter.portrait_mode = false;
+                    }
+                }
+            }
+
+            ScrollView {
+                width: parent.width;
+                height: parent.height - 50px;
+
+                property <int> columns: floor((parent.width + 5px) / (AppAdapter.thumbnail_size * 1px + 5px));
+
+                VerticalLayout {
                     spacing: 5px;
 
-                    for _col in columns : Rectangle {
-                        width: AppAdapter.thumbnail_size * 1px;
-                        height: AppAdapter.portrait_mode ? (AppAdapter.thumbnail_size * 1.5) * 1px : (AppAdapter.thumbnail_size * 0.467) * 1px;
+                    for _row in ceil(AppAdapter.games.length / columns) : HorizontalLayout {
+                        alignment: LayoutAlignment.center;
+                        spacing: 5px;
 
-                        property <int> index: _row * columns + _col;
+                        for _col in columns : Rectangle {
+                            width: AppAdapter.thumbnail_size * 1px;
+                            height: AppAdapter.portrait_mode ? (AppAdapter.thumbnail_size * 1.5) * 1px : (AppAdapter.thumbnail_size * 0.467) * 1px;
 
-                        if index < AppAdapter.games.length : GameComponent {
-                            game: AppAdapter.games[index];
+                            property <int> index: _row * columns + _col;
+
+                            if index < AppAdapter.games.length : GameComponent {
+                                game: AppAdapter.games[index];
+                            }
                         }
                     }
                 }

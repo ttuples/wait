@@ -1,8 +1,9 @@
 #![allow(unused)]
 
 use std::{borrow::BorrowMut, collections::HashMap, default, fmt, path::{self, PathBuf}};
-use registry::{Error, Hive, Security};
+use registry::{Data, Error, Hive, Security};
 use regex::Regex;
+use sysinfo::System;
 
 use super::manifest::{self, ManifestParseError};
 
@@ -21,21 +22,22 @@ impl std::error::Error for PathError {}
 
 static STEAM_ROOT: &str = r"Software\Valve\Steam";
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub struct SteamID {
     pub id3: i64,
     pub id64: i64,
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub struct SteamAccount {
     pub name: String,
     pub id: Option<SteamID>,
+    pub games: Vec<i32>,
 }
 
 impl SteamAccount {
     pub fn new(name: String, id: Option<SteamID>) -> Self {
-        Self { name, id }
+        Self { name, id, ..Default::default() }
     }
 }
 
@@ -48,17 +50,17 @@ impl From<i64> for SteamID { // From SteamID64
     }
 }
 
-#[derive(Debug, Default)]
-pub struct SteamData {
+#[derive(Debug, Default, Clone)]
+pub struct SteamModel {
     pub path: PathBuf,
     pub current_user: String,
     pub user_cache: Vec<SteamAccount>,
     pub remember_pass: bool,
-    pub directories: HashMap<String, PathBuf>,
+    pub directories: HashMap<PathBuf, Vec<i64>>,
     pub games: serde_json::Value, // GameID: Manifest
 }
 
-impl SteamData {
+impl SteamModel {
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         Ok(Self {
             path: get_path()?,
@@ -91,10 +93,52 @@ impl SteamData {
 
         for (key, value) in loginusers_data.as_object().unwrap() {
             let name = value.get("AccountName").unwrap().as_str().unwrap();
-            let id64: i64 = key.parse().unwrap();
+            let steamid: SteamID = SteamID::from(key.parse::<i64>().unwrap());
+
+            // Get account games
+            let mut user_games: Vec<i32> = Vec::new();
+            let user_path = self.path.join("userdata").join(format!("{}", steamid.id3));
+            let localconfig_path = user_path.join("config").join("localconfig.vdf");
+
+            if !localconfig_path.exists() {
+                eprintln!("Path does not exist: {:?}", localconfig_path);
+                return Err(Box::new(PathError { path: localconfig_path }));
+            }
+
+            let localconfig_data = match manifest::parse_manifest(localconfig_path) {
+                Ok(data) => data,
+                Err(e) => {
+                    eprintln!("Failed to parse manifest: {:?}", e);
+                    return Err(Box::new(ManifestParseError));
+                }
+            };
+
+            let software = localconfig_data.get("Software").unwrap().as_object().unwrap();
+
+            let mut app_data = if software.contains_key("Valve") {
+                software.get("Valve").unwrap().clone()
+            } else if software.contains_key("valve") {
+                software.get("valve").unwrap().clone()
+            } else {
+                continue;
+            };
+
+            if app_data.as_object().unwrap().contains_key("Steam") {
+                app_data = app_data.get("Steam").unwrap().clone();
+            } else if app_data.as_object().unwrap().contains_key("steam") {
+                app_data = app_data.get("steam").unwrap().clone();
+            } else {
+                continue;
+            };
+
+            for (appid, _) in app_data.get("apps").unwrap().as_object().unwrap() {
+                user_games.push(appid.parse::<i32>().unwrap());
+            }
+
             detected_accounts.push(SteamAccount {
                 name: name.to_string(),
-                id: Some(SteamID::from(id64)),
+                id: Some(steamid),
+                games: user_games,
             });
         }
 
@@ -128,8 +172,9 @@ impl SteamData {
             println!("Key: {}", key);
             if re.is_match(key) {
                 let path = value.get("path").unwrap().as_str().unwrap();
-                let drive = path.chars().nth(0).unwrap();
-                self.directories.insert(key.to_string(), PathBuf::from(path));
+                let apps: Vec<i64> = value.get("apps").unwrap().as_object().unwrap().keys().map(|x| x.parse().unwrap()).collect();
+                
+                self.directories.insert(PathBuf::from(path), apps);
 
                 // Load paths game manifests
                 let steamapps_path = format!("{}\\steamapps", path);
@@ -188,6 +233,44 @@ impl SteamData {
         
         Ok((portrait, landscape))
     }
+
+    pub fn login(&self, account: &SteamAccount) -> Result<(), Box<dyn std::error::Error>> {
+        let mut regkey = Hive::CurrentUser.open(STEAM_ROOT, Security::Write)?;
+
+        if regkey.value("AutoLoginUser")?.to_string() == account.name {
+            return Ok(());
+        }
+
+        let steam_exe = self.path.join("steam.exe");
+
+        // Set AutoLoginUser and RememberPassword
+        let user_data: Data = Data::String(utfx::WideCString::from_str(&account.name).unwrap().into());
+        regkey.set_value("AutoLoginUser", &user_data)?;
+        regkey.set_value("RememberPassword", &Data::U32(1))?;
+
+        // Spawn thread to start steam
+        std::thread::spawn(move || {
+            let mut system = System::new_all();
+            system.refresh_all();
+
+            // Close steam if running
+            if system.processes_by_exact_name("steam.exe").count() > 0 {
+                println!("Steam is running, closing...");
+                std::process::Command::new(steam_exe.clone()).arg("-exitsteam").output().unwrap();
+
+                // Wait for steam to close
+                while system.processes_by_exact_name("steam.exe").count() > 0 {
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                    system.refresh_all();
+                }
+            }
+
+            // Start steam
+            std::process::Command::new(steam_exe).spawn().unwrap();
+        });
+
+        Ok(())
+    }
 }
 
 pub fn get_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
@@ -210,4 +293,17 @@ pub fn get_remember_pass_checked() -> Result<bool, Box<dyn std::error::Error>> {
     let regkey = Hive::CurrentUser.open(STEAM_ROOT, Security::Read)?;
     let remember_pass = regkey.value("RememberPassword")?;
     Ok(remember_pass.to_string() == "1")
+}
+
+pub fn is_steam_running() -> bool {
+    let mut system = System::new_all();
+    system.refresh_all();
+
+    for (_pid, process) in system.processes() {
+        if process.name() == "steam.exe" {
+            return true;
+        }
+    }
+
+    false
 }
