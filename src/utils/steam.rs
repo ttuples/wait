@@ -1,7 +1,5 @@
-#![allow(unused)]
-
-use std::{borrow::BorrowMut, collections::HashMap, default, fmt, path::{self, PathBuf}};
-use registry::{Data, Error, Hive, Security};
+use std::{collections::HashMap, path::PathBuf};
+use registry::{Data, Hive, Security};
 use regex::Regex;
 use sysinfo::System;
 
@@ -44,12 +42,6 @@ pub struct SteamAccount {
     pub name: String,
     pub id: Option<SteamID>,
     pub games: Vec<i32>,
-}
-
-impl SteamAccount {
-    pub fn new(name: String, id: Option<SteamID>) -> Self {
-        Self { name, id, ..Default::default() }
-    }
 }
 
 impl From<i64> for SteamID { // From SteamID64
@@ -214,38 +206,34 @@ impl SteamModel {
     }
 
     pub fn game_thumbnail(&self, appid: &i32) -> Result<(Option<PathBuf>, Option<PathBuf>), Box<dyn std::error::Error>> {
-        let mut portrait: Option<PathBuf> = None;
-        let mut landscape: Option<PathBuf> = None;
+        let librarycache_path = self.path.join("appcache").join("librarycache");
 
-        let librarycache = self.path.join("appcache").join("librarycache");
-        if !librarycache.exists() {
-            eprintln!("Path does not exist: {:?}", librarycache);
-            return Err(Box::new(PathError { path: librarycache }));
-        }
+        let portrait_jpg = format!("{}_library_600x900.jpg", appid);
+        let portrait_png = format!("{}_library_600x900.png", appid);
+        let landscape_jpg = format!("{}_header.jpg", appid);
+        let landscape_png = format!("{}_header.png", appid);
 
-        for entry in std::fs::read_dir(librarycache)? {
-            let entry = entry?;
-            let entry_path = entry.path();
+        let portrait = if librarycache_path.join(&portrait_jpg).exists() {
+            Some(librarycache_path.join(&portrait_jpg))
+        } else if librarycache_path.join(&portrait_png).exists() {
+            Some(librarycache_path.join(&portrait_png))
+        } else {
+            None
+        };
 
-            // Check if image is jpg or png
-            let ext = entry_path.extension().unwrap();
-            if ext != "jpg" && ext != "png" {
-                continue;
-            }
-
-            let entry_name = entry_path.file_name().unwrap().to_str().unwrap().split('.').next().unwrap();
-            if entry_name == format!("{}_header", appid) {
-                landscape = Some(entry_path);
-            } else if entry_name == format!("{}_library_600x900", appid) {
-                portrait = Some(entry_path);
-            }
-        }
+        let landscape = if librarycache_path.join(&landscape_jpg).exists() {
+            Some(librarycache_path.join(&landscape_jpg))
+        } else if librarycache_path.join(&landscape_png).exists() {
+            Some(librarycache_path.join(&landscape_png))
+        } else {
+            None
+        };
         
         Ok((portrait, landscape))
     }
 
     pub fn set_login_account(&self, account: &SteamAccount) -> Result<(), Box<dyn std::error::Error>> {
-        let mut regkey = Hive::CurrentUser.open(STEAM_ROOT, Security::AllAccess)?;
+        let regkey = Hive::CurrentUser.open(STEAM_ROOT, Security::AllAccess)?;
 
         if regkey.value("AutoLoginUser")?.to_string() == account.name {
             return Err(Box::new(AlreadyLoggedInError));
@@ -277,12 +265,14 @@ impl SteamModel {
                     std::thread::sleep(std::time::Duration::from_secs(1));
                     system.refresh_all();
                 }
+                println!("Steam closed");
             }
 
             // Start steam
             std::process::Command::new(steam_exe)
                 .args(args.unwrap_or(vec![]))
                 .spawn().unwrap();
+            println!("Steam started");
         });
 
         Ok(())
@@ -306,7 +296,7 @@ impl SteamModel {
     pub fn launch_game(&self, account: &SteamAccount, appid: &i32) -> Result<(), Box<dyn std::error::Error>> {
         self.set_login_account(account)?;
 
-        let mut args = vec![
+        let args = vec![
             "-noreactlogin".to_string(),
             "-applaunch".to_string(),
             appid.to_string(),
@@ -338,17 +328,4 @@ pub fn get_remember_pass_checked() -> Result<bool, Box<dyn std::error::Error>> {
     let regkey = Hive::CurrentUser.open(STEAM_ROOT, Security::Read)?;
     let remember_pass = regkey.value("RememberPassword")?;
     Ok(remember_pass.to_string() == "1")
-}
-
-pub fn is_steam_running() -> bool {
-    let mut system = System::new_all();
-    system.refresh_all();
-
-    for (_pid, process) in system.processes() {
-        if process.name() == "steam.exe" {
-            return true;
-        }
-    }
-
-    false
 }
