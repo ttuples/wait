@@ -42,8 +42,31 @@ export component GameComponent inherits Rectangle {
         width: parent.width;
         height: parent.height;
 
-        clicked => {
-            AppAdapter.game-selected(game);
+        // clicked => {
+        //     AppAdapter.game-selected(game);
+        // }
+        pointer-event(event) => {
+            if (event.button == PointerEventButton.left) {
+                AppAdapter.game-selected(game);
+            } else if (event.button == PointerEventButton.right) {
+                popup.show();
+            }
+        }
+    }
+
+    popup := PopupWindow {
+        x: parent.width;
+
+        Rectangle {
+            border-color: #3d3d3d;
+            border-width: 1px;
+
+            Button {
+                text: "Favorite";
+                clicked => {
+                    AppAdapter.game-favorite(game);
+                }
+            }
         }
     }
 }

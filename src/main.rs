@@ -12,6 +12,7 @@ async fn main() -> Result<(), slint::PlatformError> {
     let mut steam_model = steam::SteamModel::new().unwrap();
     println!("Steam path: {:?}", steam_model.path);
 
+    //TODO: Error handling
     steam_model.detect_accounts().unwrap();
 
     let detected_games = match steam_model.detect_installs(steam_model.path.clone()) {
@@ -28,6 +29,7 @@ async fn main() -> Result<(), slint::PlatformError> {
     let default_portrait = Image::default();
     let default_landscape = Image::default();
     
+    //TODO: Optimize this
     let now = std::time::Instant::now();
     let games: Vec<Game> = detected_games.iter().map(
         |(id, name)| {
@@ -165,12 +167,12 @@ async fn main() -> Result<(), slint::PlatformError> {
             let favorites_handle = app_handle.global::<AppAdapter>().get_favorites();
             let favorites_handle = favorites_handle.as_any().downcast_ref::<VecModel<Game>>().unwrap();
 
-            if favorites_handle.iter().any(|favorite| favorite.id == game.id) {
-                println!("Game already favorited");
-                return;
+            // Loop through and get the index of the game
+            if let Some(index) = favorites_handle.iter().position(|g| g.id == game.id) {
+                favorites_handle.remove(index);
+            } else {
+                favorites_handle.push(game.clone());
             }
-
-            favorites_handle.push(game.clone());
         }
     });
 
