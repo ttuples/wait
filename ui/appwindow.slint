@@ -43,10 +43,12 @@ export component GameComponent inherits Rectangle {
         height: parent.height;
 
         pointer-event(event) => {
-            if (event.button == PointerEventButton.left) {
-                AppAdapter.game-selected(game);
-            } else if (event.button == PointerEventButton.right) {
-                popup.show();
+            if (event.kind == PointerEventKind.down) {
+                if (event.button == PointerEventButton.left) {
+                    AppAdapter.game-selected(game);
+                } else if (event.button == PointerEventButton.right) {
+                    popup.show();
+                }
             }
         }
     }

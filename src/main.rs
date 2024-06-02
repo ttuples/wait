@@ -1,6 +1,7 @@
 use slint::{Image, Model, ModelRc, Rgba8Pixel, SharedPixelBuffer, SharedString, VecModel};
 use std::rc::Rc;
 use utils::steam;
+use utils::settings;
 
 slint::include_modules!();
 
@@ -87,6 +88,9 @@ async fn main() -> Result<(), slint::PlatformError> {
     ).collect();
     println!("Loading games took: {:?}", now.elapsed());
 
+    let mut settings = settings::WaitSettings::init();
+    settings.load();
+
     // ---------- Setup UI ----------
     let app = AppWindow::new()?;
 
@@ -99,21 +103,23 @@ async fn main() -> Result<(), slint::PlatformError> {
         ModelRc::from(Rc::new(VecModel::<Game>::from(games.clone())))
     );
 
-    //TODO: Load favorites from registry settings
     app.global::<AppAdapter>().set_favorites(
-        ModelRc::from(Rc::new(VecModel::<Game>::from(vec![])))
+        ModelRc::from(Rc::new(VecModel::<Game>::from(
+            games.iter().filter(|game| settings.favorites.contains(&game.id)).cloned().collect::<Vec<Game>>()
+        )))
     );
 
-    app.global::<AppAdapter>().on_search_changed({
-        let app_handle = app.as_weak();
-        let games_handle = games.clone();
-        move |search| {
-            let app_handle = app_handle.upgrade().unwrap();
-            // let games_handle = app_handle.global::<AppAdapter>().get_games();
-            let filtered_games = games_handle.iter().filter(|game| game.name.contains(search.as_str())).cloned().collect::<Vec<Game>>();
-            app_handle.global::<AppAdapter>().set_games(ModelRc::from(Rc::new(VecModel::<Game>::from(filtered_games))));
-        }
-    });
+    //TODO: Handle search filtering
+    // app.global::<AppAdapter>().on_search_changed({
+    //     let app_handle = app.as_weak();
+    //     let games_handle = games.clone();
+    //     move |search| {
+    //         let app_handle = app_handle.upgrade().unwrap();
+    //         // let games_handle = app_handle.global::<AppAdapter>().get_games();
+    //         let filtered_games = games_handle.iter().filter(|game| game.name.contains(search.as_str())).cloned().collect::<Vec<Game>>();
+    //         app_handle.global::<AppAdapter>().set_games(ModelRc::from(Rc::new(VecModel::<Game>::from(filtered_games))));
+    //     }
+    // });
 
     app.global::<AppAdapter>().on_game_selected({
         let app_handle = app.as_weak();
@@ -171,9 +177,13 @@ async fn main() -> Result<(), slint::PlatformError> {
             // Loop through and get the index of the game
             if let Some(index) = favorites_handle.iter().position(|g| g.id == game.id) {
                 favorites_handle.remove(index);
+                settings.remove_favorite(game.id);
             } else {
                 favorites_handle.push(game.clone());
+                settings.add_favorite(game.id);
             }
+
+            settings.save();
         }
     });
 

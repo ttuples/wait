@@ -116,7 +116,13 @@ impl SteamModel {
                 }
             };
 
-            let software = localconfig_data.get("Software").unwrap().as_object().unwrap();
+            let software = match localconfig_data.get("Software") {
+                Some(data) => data.as_object().unwrap(),
+                None => {
+                    eprintln!("Failed to load account {}", name);
+                    continue;
+                }
+            };
 
             let mut app_data = if software.contains_key("Valve") {
                 software.get("Valve").unwrap().clone()
@@ -174,7 +180,14 @@ impl SteamModel {
         for (key, value) in libfolder_data.as_object().unwrap() {
             if re.is_match(key) {
                 let path = value.get("path").unwrap().as_str().unwrap();
-                let apps: Vec<i64> = value.get("apps").unwrap().as_object().unwrap().keys().map(|x| x.parse().unwrap()).collect();
+                let apps: Vec<i64> = match value.get("apps").unwrap().as_object() {
+                    //TODO: Fix map parsing as oject can return a key value as empty
+                    Some(data) => data.keys().map(|x| x.parse().unwrap()).collect(),
+                    None => {
+                        eprintln!("No games detected for path {}", path);
+                        continue;
+                    },
+                };
                 
                 self.directories.insert(PathBuf::from(path), apps);
 
