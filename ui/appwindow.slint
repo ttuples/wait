@@ -42,9 +42,6 @@ export component GameComponent inherits Rectangle {
         width: parent.width;
         height: parent.height;
 
-        // clicked => {
-        //     AppAdapter.game-selected(game);
-        // }
         pointer-event(event) => {
             if (event.button == PointerEventButton.left) {
                 AppAdapter.game-selected(game);
@@ -58,6 +55,7 @@ export component GameComponent inherits Rectangle {
         x: parent.width;
 
         Rectangle {
+            background: #1c1c1c;
             border-color: #3d3d3d;
             border-width: 1px;
 
@@ -327,9 +325,4 @@ export component AppWindow inherits Window {
             }
         }
     }
-
-    // if AppAdapter.show_context_menu : PopupWindow {
-        
-    //     game: AppAdapter.selected_game;
-    // }
 }

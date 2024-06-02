@@ -99,6 +99,7 @@ async fn main() -> Result<(), slint::PlatformError> {
         ModelRc::from(Rc::new(VecModel::<Game>::from(games.clone())))
     );
 
+    //TODO: Load favorites from registry settings
     app.global::<AppAdapter>().set_favorites(
         ModelRc::from(Rc::new(VecModel::<Game>::from(vec![])))
     );
