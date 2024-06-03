@@ -282,10 +282,10 @@ impl SteamModel {
             }
 
             // Start steam
+            println!("Starting Steam with args: {:?}", args.clone().unwrap_or(vec![]));
             std::process::Command::new(steam_exe)
                 .args(args.unwrap_or(vec![]))
                 .spawn().unwrap();
-            println!("Steam started");
         });
 
         Ok(())
@@ -311,6 +311,7 @@ impl SteamModel {
 
         let args = vec![
             "-noreactlogin".to_string(),
+            "-silent".to_string(),
             "-applaunch".to_string(),
             appid.to_string(),
         ];

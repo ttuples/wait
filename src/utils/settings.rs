@@ -8,6 +8,7 @@ static WAIT_SETTINGS: &str = "Software\\WaitApp";
 static FAVORITES: &str = "Software\\WaitApp\\Favorites";
 static HIDDEN: &str = "Software\\WaitApp\\Hidden";
 
+#[derive(Debug, Clone)]
 pub struct WaitSettings {
     pub favorites: Vec<i32>,
     pub hidden: Vec<i32>,

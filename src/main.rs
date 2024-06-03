@@ -1,4 +1,5 @@
 use slint::{Image, Model, ModelRc, Rgba8Pixel, SharedPixelBuffer, SharedString, VecModel};
+use utils::steam::SteamModel;
 use std::rc::Rc;
 use utils::steam;
 use utils::settings;
@@ -30,62 +31,8 @@ async fn main() -> Result<(), slint::PlatformError> {
     let default_portrait = Image::default();
     let default_landscape = Image::default();
     
-    //TODO: Optimize this
     let now = std::time::Instant::now();
-    let games: Vec<Game> = detected_games.iter().map(
-        |(id, name)| {
-            // Fetch thumbnails
-            let image_paths = match steam_model.game_thumbnail(&id) {
-                Ok(image_data) => image_data,
-                Err(e) => {
-                    eprintln!("Failed to get thumbnail: {:?}", e);
-                    (None, None)
-                }
-            };
-
-            // Create Image from image paths
-            let portrait: slint::Image = match image_paths.0 {
-                Some(path) => {
-                    match image::open(path) {
-                        Ok(data) => {
-                            let image_data = data.to_rgba8();
-                            let buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(&image_data.as_raw(), image_data.width(), image_data.height());
-                            slint::Image::from_rgba8(buffer)
-                        },
-                        Err(_e) => {
-                            // eprintln!("Failed to open image: {:?}", e);
-                            default_portrait.clone()
-                        }
-                    }
-                },
-                None => default_portrait.clone(),
-            };
-
-            let landscape: slint::Image = match image_paths.1 {
-                Some(path) => {
-                    match image::open(path) {
-                        Ok(data) => {
-                            let image_data = data.to_rgba8();
-                            let buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(&image_data.as_raw(), image_data.width(), image_data.height());
-                            slint::Image::from_rgba8(buffer)
-                        },
-                        Err(_e) => {
-                            // eprintln!("Failed to open image: {:?}", e);
-                            default_landscape.clone()
-                        }
-                    }
-                },
-                None => default_landscape.clone(),
-            };
-
-
-            Game {
-                id: *id,
-                name: SharedString::from(name),
-                thumbnail: Thumbnail { portrait, landscape },
-            }
-        }
-    ).collect();
+    let games: Vec<Game> = create_game_data(detected_games, &steam_model, (default_portrait, default_landscape));
     println!("Loading games took: {:?}", now.elapsed());
 
     let mut settings = settings::WaitSettings::init();
@@ -109,17 +56,28 @@ async fn main() -> Result<(), slint::PlatformError> {
         )))
     );
 
-    //TODO: Handle search filtering
-    // app.global::<AppAdapter>().on_search_changed({
-    //     let app_handle = app.as_weak();
-    //     let games_handle = games.clone();
-    //     move |search| {
-    //         let app_handle = app_handle.upgrade().unwrap();
-    //         // let games_handle = app_handle.global::<AppAdapter>().get_games();
-    //         let filtered_games = games_handle.iter().filter(|game| game.name.contains(search.as_str())).cloned().collect::<Vec<Game>>();
-    //         app_handle.global::<AppAdapter>().set_games(ModelRc::from(Rc::new(VecModel::<Game>::from(filtered_games))));
-    //     }
-    // });
+    app.global::<AppAdapter>().on_search_changed({
+        let app_handle = app.as_weak();
+        let games_handle = games.clone();
+        let settings = settings.clone();
+        move |search| {
+            let app_handle = app_handle.upgrade().unwrap();
+            if !search.is_empty() {
+                let filtered_games = games_handle.iter().filter(|game| game.name.to_lowercase().contains(search.to_lowercase().as_str())).cloned().collect::<Vec<Game>>();
+                app_handle.global::<AppAdapter>().set_games(ModelRc::from(Rc::new(VecModel::<Game>::from(filtered_games))));
+                // Hide favorites
+                app_handle.global::<AppAdapter>().set_favorites(ModelRc::from(Rc::new(VecModel::<Game>::from(vec![]))));
+            } else {
+                app_handle.global::<AppAdapter>().set_games(ModelRc::from(Rc::new(VecModel::<Game>::from(games_handle.clone()))));
+                // Show favorites
+                app_handle.global::<AppAdapter>().set_favorites(
+                    ModelRc::from(Rc::new(VecModel::<Game>::from(
+                        games_handle.iter().filter(|game| settings.favorites.contains(&game.id)).cloned().collect::<Vec<Game>>()
+                    )))
+                );
+            }
+        }
+    });
 
     app.global::<AppAdapter>().on_game_selected({
         let app_handle = app.as_weak();
@@ -167,6 +125,7 @@ async fn main() -> Result<(), slint::PlatformError> {
 
     app.global::<AppAdapter>().on_game_favorite({
         let app_handle = app.as_weak();
+        let mut settings = settings.clone();
         move |game| {
             let app_handle = app_handle.upgrade().unwrap();
             println!("Favorite game: {}", game.id);
@@ -219,4 +178,61 @@ async fn main() -> Result<(), slint::PlatformError> {
     });
 
     app.run()
+}
+
+fn create_game_data(games: Vec<(i32, String)>, steam_model: &SteamModel, default_thumbnail: (Image, Image)) -> Vec<Game> {
+    games.iter().map(
+        |(id, name)| {
+            // Fetch thumbnails
+            let image_paths = match steam_model.game_thumbnail(&id) {
+                Ok(image_data) => image_data,
+                Err(e) => {
+                    eprintln!("Failed to get thumbnail: {:?}", e);
+                    (None, None)
+                }
+            };
+
+            // Create Image from image paths
+            let portrait: slint::Image = match image_paths.0 {
+                Some(path) => {
+                    match image::open(path) {
+                        Ok(data) => {
+                            let image_data = data.to_rgba8();
+                            let buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(&image_data.as_raw(), image_data.width(), image_data.height());
+                            slint::Image::from_rgba8(buffer)
+                        },
+                        Err(_e) => {
+                            // eprintln!("Failed to open image: {:?}", e);
+                            default_thumbnail.0.clone()
+                        }
+                    }
+                },
+                None => default_thumbnail.0.clone(),
+            };
+
+            let landscape: slint::Image = match image_paths.1 {
+                Some(path) => {
+                    match image::open(path) {
+                        Ok(data) => {
+                            let image_data = data.to_rgba8();
+                            let buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(&image_data.as_raw(), image_data.width(), image_data.height());
+                            slint::Image::from_rgba8(buffer)
+                        },
+                        Err(_e) => {
+                            // eprintln!("Failed to open image: {:?}", e);
+                            default_thumbnail.1.clone()
+                        }
+                    }
+                },
+                None => default_thumbnail.1.clone(),
+            };
+
+
+            Game {
+                id: *id,
+                name: SharedString::from(name),
+                thumbnail: Thumbnail { portrait, landscape },
+            }
+        }
+    ).collect()
 }
