@@ -53,8 +53,17 @@ fn parse_object(input: &mut Peekable<Chars>) -> serde_json::Value {
         if let Some(&ch) = input.peek() {
             if ch == '{' {
                 input.next(); // Consume the opening curly brace
-                obj.insert(key, parse_object(input));
                 skip_whitespace(input);
+                if let Some(&ch) = input.peek() {
+                    if ch == '}' {
+                        input.next(); // Consume the closing curly brace
+                        obj.insert(key, serde_json::Value::Null);
+                        skip_whitespace(input);
+                    } else {
+                        obj.insert(key, parse_object(input));
+                        skip_whitespace(input);
+                    }
+                }
             } else if ch == '"' {
                 obj.insert(key, serde_json::Value::String(parse_string(input)));
                 skip_whitespace(input);
