@@ -1,6 +1,10 @@
+// #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use slint::{Image, Model, ModelRc, Rgba8Pixel, SharedPixelBuffer, SharedString, VecModel};
-use utils::steam::SteamModel;
 use std::rc::Rc;
+use native_windows_gui as nwg;
+
+use utils::steam::SteamModel;
 use utils::steam;
 use utils::settings;
 
@@ -11,11 +15,35 @@ mod utils;
 #[tokio::main]
 async fn main() -> Result<(), slint::PlatformError> {
     // ---------- Steam ----------
-    let mut steam_model = steam::SteamModel::new().unwrap();
-    println!("Steam path: {:?}", steam_model.path);
+    let mut steam_model = match steam::SteamModel::new() {
+        Ok(model) => model,
+        Err(e) => {
+            println!("Error creating Steam model: {:?}", e);
+            nwg::message(&nwg::MessageParams {
+                title: "Error!",
+                content: "Error loading Steam data!",
+                buttons: nwg::MessageButtons::Ok,
+                icons: nwg::MessageIcons::Error
+            });
+            return Ok(());
+        }
+    };
 
-    //TODO: Error handling
-    steam_model.detect_accounts().unwrap();
+    match steam_model.detect_accounts() {
+        Ok(accounts) => {
+            println!("Detected {} accounts", accounts.len());
+        },
+        Err(e) => {
+            println!("Error detecting accounts: {:?}", e);
+            nwg::message(&nwg::MessageParams {
+                title: "Error!",
+                content: "Error detecting Steam accounts!",
+                buttons: nwg::MessageButtons::Ok,
+                icons: nwg::MessageIcons::Error
+            });
+            return Ok(());
+        }
+    }
 
     let detected_games = match steam_model.detect_installs(steam_model.path.clone()) {
         Ok(games) => {
@@ -146,6 +174,28 @@ async fn main() -> Result<(), slint::PlatformError> {
         }
     });
 
+    app.global::<AppAdapter>().on_game_hide({
+        let app_handle = app.as_weak();
+        let mut settings = settings.clone();
+        move |game| {
+            let app_handle = app_handle.upgrade().unwrap();
+            println!("Hide game: {}", game.id);
+
+            settings.add_hidden(game.id);
+
+            let favorites_handle = app_handle.global::<AppAdapter>().get_favorites();
+            let favorites_handle = favorites_handle.as_any().downcast_ref::<VecModel<Game>>().unwrap();
+
+            // Loop through and get the index of the game
+            if let Some(index) = favorites_handle.iter().position(|g| g.id == game.id) {
+                favorites_handle.remove(index);
+                settings.remove_favorite(game.id);
+            }
+
+            settings.save();
+        }
+    });
+
     app.global::<AppAdapter>().on_account_login({
         let app_handle = app.as_weak();
         let steam_handle = steam_model.clone();
@@ -166,14 +216,6 @@ async fn main() -> Result<(), slint::PlatformError> {
             println!("Opening SteamDB for game: {}", game.id);
             let url = format!("https://steamdb.info/app/{}", game.id);
             open::that(url).unwrap();
-        }
-    });
-
-    app.global::<AppAdapter>().on_debug({
-        // let app_handle = app.as_weak();
-        move || {
-            // let app_handle = app_handle.upgrade().unwrap();
-            println!("Debug clicked");
         }
     });
 

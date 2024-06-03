@@ -54,17 +54,32 @@ export component GameComponent inherits Rectangle {
     }
 
     popup := PopupWindow {
-        x: parent.width;
+        width: parent.width;
+        height: parent.height;
 
         Rectangle {
             background: #1c1c1c;
             border-color: #3d3d3d;
             border-width: 1px;
 
-            Button {
-                text: "Favorite";
-                clicked => {
-                    AppAdapter.game-favorite(game);
+            VerticalBox {
+                alignment: LayoutAlignment.center;
+                spacing: 5px;
+
+                Button {
+                    text: "Favorite";
+
+                    clicked => {
+                        AppAdapter.game-favorite(game);
+                    }
+                }
+
+                Button {
+                    text: "Hide";
+
+                    clicked => {
+                        AppAdapter.game-hide(game);
+                    }
                 }
             }
         }
@@ -210,22 +225,20 @@ export global AppAdapter {
     in-out property <string> selected_account;
     in-out property <bool> show_context_menu: false;
 
-    // Settings
     out property <int> thumbnail_size: 100;
-
 
     callback game-selected(Game);
     callback game-launch(Game, string);
     callback game-favorite(Game);
+    callback game-hide(Game);
     callback account-login(string);
     callback steamdb-open(Game);
     callback search-changed(string);
-
-    callback debug();
 }
 
 export component AppWindow inherits Window {
     title: "What Account Is This?";
+    icon: @image-url("../assets/wait.png");
 
     min-width: 1280px;
     min-height: 720px;

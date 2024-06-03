@@ -58,7 +58,6 @@ pub struct SteamModel {
     pub path: PathBuf,
     pub current_user: String,
     pub user_cache: Vec<SteamAccount>,
-    pub remember_pass: bool,
     pub directories: HashMap<PathBuf, Vec<i64>>,
     pub games: serde_json::Value, // GameID: Manifest
 }
@@ -68,7 +67,6 @@ impl SteamModel {
         Ok(Self {
             path: get_path()?,
             current_user: get_current_user()?,
-            remember_pass: get_remember_pass_checked()?,
             games: serde_json::Value::Object(serde_json::Map::new()), // GameID: Manifest
             ..Default::default()
         })
@@ -95,8 +93,25 @@ impl SteamModel {
         };
 
         for (key, value) in loginusers_data.as_object().unwrap() {
-            let name = value.get("AccountName").unwrap().as_str().unwrap();
-            let steamid: SteamID = SteamID::from(key.parse::<i64>().unwrap());
+            // Get account name
+            let name = match value.get("AccountName") {
+                Some(data) => data.as_str().unwrap_or_else(|| ""),
+                None => "",
+            };
+            if name.is_empty() {
+                eprintln!("Failed to load account '{}', Could not read 'AccountName'", key);
+                continue;
+            }
+
+            // Get account SteamID
+            let id = match key.parse::<i64>() {
+                Ok(id) => id,
+                Err(_) => {
+                    eprintln!("Failed to load account '{}', Could not read 'SteamID'", key);
+                    continue;
+                },
+            };
+            let steamid: SteamID = SteamID::from(id);
 
             // Get account games
             let mut user_games: Vec<i32> = Vec::new();
@@ -181,13 +196,19 @@ impl SteamModel {
             if re.is_match(key) {
                 let path = value.get("path").unwrap().as_str().unwrap();
                 let apps: Vec<i64> = match value.get("apps").unwrap().as_object() {
-                    //TODO: Fix map parsing as oject can return a key value as empty
-                    Some(data) => data.keys().map(|x| x.parse().unwrap()).collect(),
-                    None => {
-                        eprintln!("No games detected for path {}", path);
-                        continue;
+                    Some(data) => {
+                        if data.keys().next().unwrap().is_empty() {
+                            Vec::new()
+                        } else {
+                            data.keys().map(|x| x.parse().unwrap()).collect()
+                        }
                     },
+                    None => Vec::new(),
                 };
+                if apps.is_empty() {
+                    eprintln!("No games detected for path {}", path);
+                    continue;
+                }
                 
                 self.directories.insert(PathBuf::from(path), apps);
 
@@ -336,10 +357,4 @@ pub fn get_current_user() -> Result<String, Box<dyn std::error::Error>> {
     let regkey = Hive::CurrentUser.open(STEAM_ROOT, Security::Read)?;
     let user = regkey.value("AutoLoginUser")?;
     Ok(user.to_string())
-}
-
-pub fn get_remember_pass_checked() -> Result<bool, Box<dyn std::error::Error>> {
-    let regkey = Hive::CurrentUser.open(STEAM_ROOT, Security::Read)?;
-    let remember_pass = regkey.value("RememberPassword")?;
-    Ok(remember_pass.to_string() == "1")
 }

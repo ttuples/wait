@@ -55,6 +55,18 @@ impl WaitSettings {
         }
     }
     
+    pub fn add_hidden(&mut self, id: i32) {
+        if !self.hidden.contains(&id) {
+            self.hidden.push(id);
+        }
+    }
+
+    pub fn remove_hidden(&mut self, id: i32) {
+        if let Some(index) = self.hidden.iter().position(|&x| x == id) {
+            self.hidden.remove(index);
+        }
+    }
+
     pub fn load(&mut self) {
         let mut favorites = vec![];
         let mut hidden = vec![];
