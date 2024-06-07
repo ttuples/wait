@@ -328,7 +328,14 @@ impl SteamModel {
     }
 
     pub fn launch_game(&self, account: &SteamAccount, appid: &i32) -> Result<(), Box<dyn std::error::Error>> {
-        self.set_login_account(account)?;
+        match self.set_login_account(account) {
+            Ok(_) => (),
+            Err(e) => {
+                if e.downcast_ref::<AlreadyLoggedInError>().is_none() {
+                    return Err(e);
+                }
+            },
+        }
 
         let args = vec![
             "-noreactlogin".to_string(),
