@@ -307,6 +307,9 @@ impl SteamModel {
             std::process::Command::new(steam_exe)
                 .args(args.unwrap_or(vec![]))
                 .spawn().unwrap();
+
+            // Exit the application
+            std::process::exit(0);
         });
 
         Ok(())
