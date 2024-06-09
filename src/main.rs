@@ -1,6 +1,7 @@
 // #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use slint::{Image, Model, ModelRc, Rgba8Pixel, SharedPixelBuffer, SharedString, VecModel};
+use std::cell::RefCell;
 use std::rc::Rc;
 use native_windows_gui as nwg;
 
@@ -63,8 +64,8 @@ async fn main() -> Result<(), slint::PlatformError> {
     let games: Vec<Game> = create_game_data(detected_games, &steam_model, (default_portrait, default_landscape));
     println!("Loading games took: {:?}", now.elapsed());
 
-    let mut settings = settings::WaitSettings::init();
-    settings.load();
+    let settings = Rc::new(RefCell::new(settings::WaitSettings::init()));
+    settings.borrow_mut().load();
 
     // ---------- Setup UI ----------
     let app = AppWindow::new()?;
@@ -80,7 +81,7 @@ async fn main() -> Result<(), slint::PlatformError> {
 
     app.global::<AppAdapter>().set_favorites(
         ModelRc::from(Rc::new(VecModel::<Game>::from(
-            games.iter().filter(|game| settings.favorites.contains(&game.id)).cloned().collect::<Vec<Game>>()
+            games.iter().filter(|game| settings.borrow().favorites.contains(&game.id)).cloned().collect::<Vec<Game>>()
         )))
     );
 
@@ -100,7 +101,7 @@ async fn main() -> Result<(), slint::PlatformError> {
                 // Show favorites
                 app_handle.global::<AppAdapter>().set_favorites(
                     ModelRc::from(Rc::new(VecModel::<Game>::from(
-                        games_handle.iter().filter(|game| settings.favorites.contains(&game.id)).cloned().collect::<Vec<Game>>()
+                        games_handle.iter().filter(|game| settings.borrow().favorites.contains(&game.id)).cloned().collect::<Vec<Game>>()
                     )))
                 );
             }
@@ -113,6 +114,7 @@ async fn main() -> Result<(), slint::PlatformError> {
         let settings = settings.clone();
         move |game| {
             let app_handle = app_handle.upgrade().unwrap();
+            let settings = settings.borrow();
 
             app_handle.global::<AppAdapter>().set_selected_game(game.clone());
 
@@ -131,11 +133,14 @@ async fn main() -> Result<(), slint::PlatformError> {
             // Check if game has account saved
             if let Some(id3) = settings.accounts.get(&game.id) {
                 if let Some(account) = steam_handle.user_cache.iter().find(|account| account.id.as_ref().unwrap().id3 == *id3) {
+                    println!("Setting selected account: {}", account.name);
                     app_handle.global::<AppAdapter>().set_selected_account(SharedString::from(account.name.clone()));
                     return;
                 }
+                println!("Account not found in cache");
             }
 
+            println!("Setting to first account");
             app_handle.global::<AppAdapter>().set_selected_account(
                 match game_accounts.first() {
                     Some(account) => account.clone(),
@@ -163,9 +168,10 @@ async fn main() -> Result<(), slint::PlatformError> {
 
     app.global::<AppAdapter>().on_game_favorite({
         let app_handle = app.as_weak();
-        let mut settings = settings.clone();
+        let settings = settings.clone();
         move |game| {
             let app_handle = app_handle.upgrade().unwrap();
+            let mut settings = settings.borrow_mut();
             println!("Favorite game: {}", game.id);
 
             let favorites_handle = app_handle.global::<AppAdapter>().get_favorites();
@@ -186,10 +192,11 @@ async fn main() -> Result<(), slint::PlatformError> {
 
     app.global::<AppAdapter>().on_game_hide({
         let app_handle = app.as_weak();
-        let mut settings = settings.clone();
+        let settings = settings.clone();
         move |game| {
             let app_handle = app_handle.upgrade().unwrap();
             println!("Hide game: {}", game.id);
+            let mut settings = settings.borrow_mut();
 
             settings.add_hidden(game.id);
 
@@ -208,7 +215,7 @@ async fn main() -> Result<(), slint::PlatformError> {
 
     app.global::<AppAdapter>().on_game_account({
         let steam_handle = steam_model.clone();
-        let mut settings = settings.clone();
+        let settings = settings.clone();
         move |game, account_name| {
             println!("Updating game: {} with account: {}", game.id, account_name);
 
@@ -223,6 +230,7 @@ async fn main() -> Result<(), slint::PlatformError> {
             };
             println!("Account: {:?}", account);
 
+            let mut settings = settings.borrow_mut();
             settings.add_account(game.id, account);
             settings.save();
         }

@@ -176,13 +176,14 @@ export component GameInfo inherits Rectangle {
         account := ComboBox {
             width: parent.width;
             height: 30px;
-            model: AppAdapter.game_accounts;
-            current-value: AppAdapter.selected_account;
+            model <=> AppAdapter.game_accounts;
+            current-value <=> AppAdapter.selected_account;
 
             selected(account) => {
                 AppAdapter.selected_account = account;
                 AppAdapter.game-account(AppAdapter.selected_game, account);
                 self.clear-focus();
+                launch.focus();
             }
         }
 
@@ -191,7 +192,7 @@ export component GameInfo inherits Rectangle {
             height: 40px;
             spacing: 5px;
 
-            Button {
+            launch := Button {
                 text: "Launch";
                 clicked => {
                     AppAdapter.game-launch(AppAdapter.selected_game, account.current-value);
