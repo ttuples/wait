@@ -17,3 +17,4 @@ This is a niche application for people like me who have bought games across mult
 - Notifications
 - [x] Remember account selection for specific games
 - Add Hide functionality
+- Fix application not being resizable
