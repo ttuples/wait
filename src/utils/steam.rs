@@ -47,7 +47,7 @@ pub struct SteamAccount {
 impl From<i64> for SteamID { // From SteamID64
     fn from(id64: i64) -> Self {
         Self {
-            id3: (id64 & 0xFFFFFFFF) as i64,
+            id3: (id64 & 0xFFFFFFFF),
             id64,
         }
     }
@@ -58,7 +58,7 @@ pub struct SteamModel {
     pub path: PathBuf,
     pub current_user: String,
     pub user_cache: Vec<SteamAccount>,
-    pub directories: HashMap<PathBuf, Vec<i64>>,
+    pub directories: HashMap<PathBuf, Vec<i32>>,
     pub games: serde_json::Value, // GameID: Manifest
 }
 
@@ -195,7 +195,7 @@ impl SteamModel {
         for (key, value) in libfolder_data.as_object().unwrap() {
             if re.is_match(key) {
                 let path = value.get("path").unwrap().as_str().unwrap();
-                let apps: Vec<i64> = match value.get("apps").unwrap().as_object() {
+                let apps: Vec<i32> = match value.get("apps").unwrap().as_object() {
                     Some(data) => {
                         if data.keys().next().unwrap().is_empty() {
                             Vec::new()

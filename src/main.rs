@@ -1,4 +1,4 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use slint::{Image, Model, ModelRc, Rgba8Pixel, SharedPixelBuffer, SharedString, VecModel};
 use std::rc::Rc;
@@ -110,6 +110,7 @@ async fn main() -> Result<(), slint::PlatformError> {
     app.global::<AppAdapter>().on_game_selected({
         let app_handle = app.as_weak();
         let steam_handle = steam_model.clone();
+        let settings = settings.clone();
         move |game| {
             let app_handle = app_handle.upgrade().unwrap();
 
@@ -126,6 +127,15 @@ async fn main() -> Result<(), slint::PlatformError> {
 
             // Handle setting game accounts for the selected game
             app_handle.global::<AppAdapter>().set_game_accounts(ModelRc::from(Rc::new(VecModel::<SharedString>::from(game_accounts.clone()))));
+
+            // Check if game has account saved
+            if let Some(id3) = settings.accounts.get(&game.id) {
+                if let Some(account) = steam_handle.user_cache.iter().find(|account| account.id.as_ref().unwrap().id3 == *id3) {
+                    app_handle.global::<AppAdapter>().set_selected_account(SharedString::from(account.name.clone()));
+                    return;
+                }
+            }
+
             app_handle.global::<AppAdapter>().set_selected_account(
                 match game_accounts.first() {
                     Some(account) => account.clone(),
@@ -192,6 +202,28 @@ async fn main() -> Result<(), slint::PlatformError> {
                 settings.remove_favorite(game.id);
             }
 
+            settings.save();
+        }
+    });
+
+    app.global::<AppAdapter>().on_game_account({
+        let steam_handle = steam_model.clone();
+        let mut settings = settings.clone();
+        move |game, account_name| {
+            println!("Updating game: {} with account: {}", game.id, account_name);
+
+            let account = match steam_handle.user_cache.iter().find(|account| account.name == account_name.as_str()) {
+                Some(account) => {
+                    match account.id.as_ref() {
+                        Some(id) => id.id3,
+                        None => return,
+                    }
+                },
+                None => return,
+            };
+            println!("Account: {:?}", account);
+
+            settings.add_account(game.id, account);
             settings.save();
         }
     });

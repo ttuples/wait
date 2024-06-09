@@ -1,24 +1,29 @@
 #![allow(unused)]
 
-use registry::{Hive, Security};
+use std::collections::HashMap;
+
+use registry::{Data, Hive, Security};
 
 slint::include_modules!();
 
 static WAIT_SETTINGS: &str = "Software\\WaitApp";
 static FAVORITES: &str = "Software\\WaitApp\\Favorites";
 static HIDDEN: &str = "Software\\WaitApp\\Hidden";
+static ACCOUNTS: &str = "Software\\WaitApp\\Accounts";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct WaitSettings {
     pub favorites: Vec<i32>,
     pub hidden: Vec<i32>,
+    pub accounts: HashMap<i32, i64>,
 }
 
 impl WaitSettings {
     pub fn new() -> Self {
         Self {
-            favorites: vec![],
-            hidden: vec![],
+            favorites: Vec::new(),
+            hidden: Vec::new(),
+            accounts: HashMap::new(),
         }
     }
 
@@ -38,6 +43,11 @@ impl WaitSettings {
             // Create registry key
             Hive::CurrentUser.create(HIDDEN, Security::AllAccess).unwrap();
             println!("Created registry key: {:?}", HIDDEN)
+        }
+        if Hive::CurrentUser.open(ACCOUNTS, Security::Read).is_err() {
+            // Create registry key
+            Hive::CurrentUser.create(ACCOUNTS, Security::AllAccess).unwrap();
+            println!("Created registry key: {:?}", ACCOUNTS)
         }
 
         Self::new()
@@ -67,9 +77,14 @@ impl WaitSettings {
         }
     }
 
+    pub fn add_account(&mut self, game: i32, account: i64) {
+        self.accounts.insert(game, account);
+    }
+
     pub fn load(&mut self) {
         let mut favorites = vec![];
         let mut hidden = vec![];
+        let mut accounts = HashMap::new();
 
         // Load favorites
         let fav_reg = Hive::CurrentUser.open(FAVORITES, Security::Read).unwrap();
@@ -108,11 +123,35 @@ impl WaitSettings {
             }
         }
 
-        println!("Loaded favorites: {:?}", favorites);
-        println!("Loaded hidden: {:?}", hidden);
+        // Load game accounts
+        let acc_reg = Hive::CurrentUser.open(ACCOUNTS, Security::Read).unwrap();
+        for result in acc_reg.values() {
+            match result {
+                Ok(value) => {
+                    // Convert name to i32
+                    match value.name().to_string() {
+                        Ok(game) => {
+                            match value.data() {
+                                Data::U64(account) => {
+                                    accounts.insert(game.parse::<i32>().unwrap(), (*account as i64));
+                                },
+                                _ => {}
+                            }
+                        },
+                        Err(_) => {}
+                    }
+                },
+                Err(_) => {}
+            }
+        }
 
         self.favorites = favorites;
         self.hidden = hidden;
+        self.accounts = accounts;
+
+        println!("Loaded favorites: {:?}", self.favorites);
+        println!("Loaded hidden: {:?}", self.hidden);
+        println!("Loaded accounts: {:?}", self.accounts);
     }
 
     pub fn save(&self) {
@@ -131,8 +170,7 @@ impl WaitSettings {
                                 fav_reg.delete(&id.to_string(), false).unwrap();
                             }
                         },
-                        Err(_) => {
-                        }
+                        Err(_) => {}
                     }
                 },
                 Err(_) => {}
@@ -143,5 +181,31 @@ impl WaitSettings {
         }
 
         // Save hidden
+        let mut hidden_to_save = self.hidden.to_vec();
+        let hidden_reg = Hive::CurrentUser.open(HIDDEN, Security::AllAccess).unwrap();
+        for result in hidden_reg.keys() {
+            match result {
+                Ok(value) => {
+                    // Convert name to i32
+                    match value.to_string().parse::<i32>() {
+                        Ok(id) => {
+                            if hidden_to_save.contains(&id) {
+                                hidden_to_save.remove(hidden_to_save.iter().position(|&x| x == id).unwrap());
+                            } else {
+                                hidden_reg.delete(&id.to_string(), false).unwrap();
+                            }
+                        },
+                        Err(_) => {}
+                    }
+                },
+                Err(_) => {}
+            }
+        }
+
+        // Save accounts
+        let acc_reg = Hive::CurrentUser.open(ACCOUNTS, Security::AllAccess).unwrap();
+        for (game, account) in self.accounts.iter() {
+            acc_reg.set_value(game.to_string(), &Data::U64(*account as u64)).unwrap();
+        }
     }
 }

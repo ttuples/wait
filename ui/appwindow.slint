@@ -181,6 +181,7 @@ export component GameInfo inherits Rectangle {
 
             selected(account) => {
                 AppAdapter.selected_account = account;
+                AppAdapter.game-account(AppAdapter.selected_game, account);
                 self.clear-focus();
             }
         }
@@ -231,6 +232,7 @@ export global AppAdapter {
     callback game-launch(Game, string);
     callback game-favorite(Game);
     callback game-hide(Game);
+    callback game-account(Game, string);
     callback account-login(string);
     callback steamdb-open(Game);
     callback search-changed(string);
