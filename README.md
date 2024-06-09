@@ -2,5 +2,5 @@
 
 ### TODO
 - Notifications
-- Remember account selection for specific games
+- [x] Remember account selection for specific games
 - Add Hide functionality
