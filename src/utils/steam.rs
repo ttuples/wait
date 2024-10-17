@@ -53,6 +53,7 @@ impl From<i64> for SteamID { // From SteamID64
     }
 }
 
+#[allow(unused)]
 #[derive(Debug, Default, Clone)]
 pub struct SteamModel {
     pub path: PathBuf,
