@@ -20,6 +20,8 @@ win_dialog = "1.0.1"
 egui_grid = "0.5.1"
 open = "5.3.0"
 egui_json_tree = "0.7.1"
+simple-logging = "2.0.2"
+log = "0.4.22"
 
 [build-dependencies]
 embed-resource = "2.5.0"

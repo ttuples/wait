@@ -4,7 +4,9 @@ mod app;
 use app::steam::SteamModel;
 use win_dialog::{WinDialog, style, Icon};
 
-fn main() -> eframe::Result {
+fn main() {
+    simple_logging::log_to_file("wait.log", log::LevelFilter::Debug).unwrap();
+
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1600.0, 900.0])
@@ -24,9 +26,10 @@ fn main() -> eframe::Result {
                 .with_icon(Icon::Error)
                 .show()
                 .expect("Failed to show dialog");
-            return Ok(())
+            return
         }
     };
+    log::info!("Steam model created");
     match steam_model.detect_accounts() {
         Ok(_) => {}
         Err(err) => {
@@ -35,9 +38,10 @@ fn main() -> eframe::Result {
                 .with_icon(Icon::Error)
                 .show()
                 .expect("Failed to show dialog");
-            return Ok(())
+            return
         }
     }
+    log::info!("Accounts detected");
     match steam_model.detect_installs() {
         Ok(_) => {}
         Err(err) => {
@@ -46,16 +50,26 @@ fn main() -> eframe::Result {
                 .with_icon(Icon::Error)
                 .show()
                 .expect("Failed to show dialog");
-            return Ok(())
+            return
         }
     }
+    log::info!("Installs detected");
 
-    eframe::run_native(
+    match eframe::run_native(
         "wait",
         native_options,
         Box::new(|cc| {
             egui_extras::install_image_loaders(&cc.egui_ctx);
             Ok(Box::new(app::App::new(cc, steam_model)))
         }),
-    )
+    ) {
+        Ok(_) => {}
+        Err(err) => {
+            WinDialog::new(format!("Error: {}", err))
+                .with_style(style::Ok_)
+                .with_icon(Icon::Error)
+                .show()
+                .expect("Failed to show dialog");
+        }
+    }
 }

@@ -52,8 +52,21 @@ impl App {
                 (app.clone(), thumbnail)
             })
             .collect();
+        log::info!("Thumbnail cache updated");
 
-        let selected_account = steam_model.get_current_user().unwrap();
+        let selected_account = match steam_model.get_current_user() {
+            Ok(account) => account,
+            Err(_) => {
+                match steam_model.user_cache.first() {
+                    Some(account) => account.clone(),
+                    None => {
+                        log::error!("No accounts found");
+                        panic!("No accounts found");
+                    }
+                }
+            }
+        };
+        log::info!("Current loggin account: {}", selected_account.name());
 
         // Persisted state
         if let Some(storage) = cc.storage {
@@ -61,9 +74,11 @@ impl App {
             app.steam_model = steam_model;
             app.thumbnail_cache = thumbnail_cache;
             app.selected_account = selected_account;
+            log::info!("Restored state");
             return app;
         }
 
+        log::info!("No persisted state found. Applying default state");
         // Default state
         Self {
             grid_size: 200.0,
@@ -107,7 +122,7 @@ impl eframe::App for App {
                                 //TODO: Option to close app after logging in
                             },
                             Err(e) => {
-                                eprintln!("Error: {}", e);
+                                log::error!("Login Error: {}", e);
                             }
                         }
                     }
@@ -216,12 +231,35 @@ impl eframe::App for App {
                 ui.separator();
 
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.collapsing("Favorites", |ui| {
-                        if self.favorites.len() > 0 {
+                    egui::CollapsingHeader::new(format!("Favorites ({})", self.favorites.len()))
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            if self.favorites.len() > 0 {
+                                self.game_grid(ui,
+                                    match self.search_filter {
+                                        ref s if s.is_empty() => self.favorites.clone(),
+                                        ref s => self.favorites.clone().iter().filter_map(|app| {
+                                            if app.name.to_lowercase().contains(s) {
+                                                Some(app.clone())
+                                            } else {
+                                                None
+                                            }
+                                        }).collect()
+                                    }
+                                );
+                            }
+                        }
+                    );
+                    
+                    ui.separator();
+
+                    egui::CollapsingHeader::new(format!("All Games ({})", self.steam_model.games.len()))
+                        .default_open(true)
+                        .show(ui, |ui| {
                             self.game_grid(ui,
                                 match self.search_filter {
-                                    ref s if s.is_empty() => self.favorites.clone(),
-                                    ref s => self.favorites.clone().iter().filter_map(|app| {
+                                    ref s if s.is_empty() => self.steam_model.get_installed_apps(),
+                                    ref s => self.steam_model.get_installed_apps().iter().filter_map(|app| {
                                         if app.name.to_lowercase().contains(s) {
                                             Some(app.clone())
                                         } else {
@@ -231,22 +269,7 @@ impl eframe::App for App {
                                 }
                             );
                         }
-                    });
-                    ui.separator();
-                    ui.collapsing("All Games", |ui| {
-                        self.game_grid(ui,
-                            match self.search_filter {
-                                ref s if s.is_empty() => self.steam_model.get_installed_apps(),
-                                ref s => self.steam_model.get_installed_apps().iter().filter_map(|app| {
-                                    if app.name.to_lowercase().contains(s) {
-                                        Some(app.clone())
-                                    } else {
-                                        None
-                                    }
-                                }).collect()
-                            }
-                        );
-                    });
+                    );
                 });
             });
         });
@@ -262,6 +285,7 @@ impl App {
                 if let Some(portrait) = thumbnail.portrait {
                     return egui::Image::new(format!("file://{}", portrait.to_string_lossy()));
                 } else {
+                    log::info!("Portrait thumbnail not found for {}, using steam cdn", app.name);
                     return egui::Image::new(ImageSource::Uri(format!("https://steamcdn-a.akamaihd.net/steam/apps/{}/library_600x900.jpg", app.id).into()));
                 }
             },
@@ -269,6 +293,7 @@ impl App {
                 if let Some(landscape) = thumbnail.landscape {
                     return egui::Image::new(format!("file://{}", landscape.to_string_lossy()));
                 } else {
+                    log::info!("Landscape thumbnail not found for {}, using steam cdn", app.name);
                     return egui::Image::new(ImageSource::Uri(format!("https://steamcdn-a.akamaihd.net/steam/apps/{}/header.jpg", app.id).into()));
                 }
             }
@@ -340,7 +365,7 @@ impl App {
         match self.steam_model.launch_game(self.saved_logins.get(app).unwrap_or(&self.selected_account), &app.id) {
             Ok(_) => {},
             Err(e) => {
-                eprintln!("Error: {}", e);
+                log::error!("Launch Error: {}", e);
             }
         }
     }
