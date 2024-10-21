@@ -1,5 +1,5 @@
 [package]
-name = "wait_egui"
+name = "wait"
 version = "0.2.0"
 authors = ["Paul Cameron <kd8ogdtfrespect@gmail.com>"]
 edition = "2021"
