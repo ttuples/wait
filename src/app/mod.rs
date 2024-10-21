@@ -3,7 +3,7 @@ use egui::{Align, ImageSource, Layout, Vec2};
 use egui_json_tree::JsonTree;
 use steam::prelude::*;
 
-use core::f32;
+use core::{f32, fmt};
 use std::collections::HashMap;
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -14,6 +14,7 @@ pub struct App {
     saved_logins: HashMap<AppID, SteamAccount>,
     thumbnail_mode: ThumbnailMode,
     grid_size: f32,
+    close_after: CloseAfter,
 
     #[serde(skip)]
     steam_model: SteamModel,
@@ -33,6 +34,27 @@ enum ThumbnailMode {
     #[default]
     Portrait,
     Landscape
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Default, Clone, PartialEq, Eq, Hash)]
+enum CloseAfter {
+    #[default]
+    None,
+    Launch,
+    Login,
+    Both
+}
+
+impl fmt::Display for CloseAfter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CloseAfter::None => write!(f, "None"),
+            CloseAfter::Launch => write!(f, "Launch"),
+            CloseAfter::Login => write!(f, "Login"),
+            CloseAfter::Both => write!(f, "Both"),
+        }
+    }
 }
 
 impl App {
@@ -119,7 +141,12 @@ impl eframe::App for App {
                     if ui.button("Login to Steam").clicked() {
                         match self.steam_model.login(&self.selected_account) {
                             Ok(_) => {
-                                //TODO: Option to close app after logging in
+                                // match self.close_after {
+                                //     CloseAfter::Login | CloseAfter::Both => {
+                                //         std::process::exit(0);
+                                //     },
+                                //     _ => {}
+                                // }
                             },
                             Err(e) => {
                                 log::error!("Login Error: {}", e);
@@ -159,16 +186,14 @@ impl eframe::App for App {
 
                                 egui::ComboBox::from_id_salt("Game Account")
                                     .width(ui.available_width())
-                                    .selected_text(format!("{}", self.saved_logins.get(app).unwrap_or(&self.selected_account).name()))
+                                    .selected_text(format!("{}", self.saved_logins.get(app).unwrap().name()))
                                     .show_ui(ui, |ui| {
                                         for steam_account in &self.steam_model.user_cache {
-                                            if ui.selectable_value(
-                                                &mut self.saved_logins.get_mut(app).unwrap(),
-                                                &mut steam_account.clone(),
+                                            ui.selectable_value(
+                                                &mut *self.saved_logins.get_mut(app).unwrap(),
+                                                steam_account.clone(),
                                                 steam_account.name(),
-                                            ).clicked() {
-                                                self.saved_logins.insert(app.clone(), steam_account.clone());
-                                            };
+                                            );
                                         }
                                     });
 
@@ -226,6 +251,16 @@ impl eframe::App for App {
                             .hint_text("Search")
                             .desired_width(300.0)
                     );
+
+                    //TODO: Implement close after
+                    // egui::ComboBox::from_label("Close After")
+                    //     .selected_text(format!("{}", self.close_after))
+                    //     .show_ui(ui, |ui| {
+                    //         ui.selectable_value(&mut self.close_after, CloseAfter::None, "None");
+                    //         ui.selectable_value(&mut self.close_after, CloseAfter::Launch, "Launch");
+                    //         ui.selectable_value(&mut self.close_after, CloseAfter::Login, "Login");
+                    //         ui.selectable_value(&mut self.close_after, CloseAfter::Both, "Both");
+                    //     });
                 });
 
                 ui.separator();
@@ -362,8 +397,15 @@ impl App {
     }
 
     fn launch(&mut self, app: &AppID) {
-        match self.steam_model.launch_game(self.saved_logins.get(app).unwrap_or(&self.selected_account), &app.id) {
-            Ok(_) => {},
+        match self.steam_model.launch_game(self.saved_logins.get(app).unwrap(), &app.id) {
+            Ok(_) => {
+                // match self.close_after {
+                //     CloseAfter::Launch | CloseAfter::Both => {
+                //         std::process::exit(0)
+                //     },
+                //     _ => {}
+                // }
+            },
             Err(e) => {
                 log::error!("Launch Error: {}", e);
             }

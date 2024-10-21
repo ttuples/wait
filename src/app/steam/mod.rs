@@ -11,6 +11,7 @@ use registry::{Data, Hive, Security};
 use regex::Regex;
 use sysinfo::System;
 
+#[allow(unused)]
 pub mod prelude {
     pub use super::error::LoginError;
     pub use super::data::{SteamID, SteamAccount, AppID, Thumbnail};
@@ -332,14 +333,15 @@ impl SteamModel {
             system.refresh_all();
 
             // Close steam if running
-            if system.processes_by_exact_name(std::ffi::OsStr::new("steam")).count() > 0 {
+            if system.processes_by_exact_name("steam.exe".as_ref()).count() > 0 {
                 println!("Steam is running, closing...");
                 std::process::Command::new(steam_exe.clone()).arg("-exitsteam").output().unwrap();
 
                 // Wait for steam to close
-                while system.processes_by_exact_name(std::ffi::OsStr::new("steam")).count() > 0 {
+                while system.processes_by_exact_name("steam.exe".as_ref()).count() > 0 {
+                    println!("Waiting for Steam to close...");
                     std::thread::sleep(std::time::Duration::from_secs(1));
-                    system.refresh_all();
+                    system = System::new_all();
                 }
                 println!("Steam closed");
             }
@@ -351,7 +353,7 @@ impl SteamModel {
                 .spawn().unwrap();
 
             // Exit the application
-            // std::process::exit(0);
+            std::process::exit(0);
         });
 
         Ok(())
@@ -364,9 +366,7 @@ impl SteamModel {
         match self.set_login_account(account) {
             Ok(_) => (),
             Err(e) => {
-                if e.downcast_ref::<LoginError>().is_some_and(|e| e == &LoginError::AlreadyLoggedIn) {
-                    return Err(e);
-                }
+                return Err(e);
             },
         }
 
@@ -381,21 +381,25 @@ impl SteamModel {
     /// 
     /// this function will login to the account and start the game
     pub fn launch_game(&self, account: &SteamAccount, appid: &i32) -> Result<(), Box<dyn std::error::Error>> {
-        match self.set_login_account(account) {
-            Ok(_) => (),
-            Err(e) => {
-                if !e.downcast_ref::<LoginError>().is_some_and(|e| e == &LoginError::AlreadyLoggedIn) {
-                    return Err(e);
-                }
-            },
-        }
-
         let args = vec![
             "-noreactlogin".to_string(),
             "-silent".to_string(),
             "-applaunch".to_string(),
             appid.to_string(),
         ];
+
+        match self.set_login_account(account) {
+            Ok(_) => (),
+            Err(e) => {
+                if e.downcast_ref::<LoginError>().is_some_and(|e| e == &LoginError::AlreadyLoggedIn) {
+                    std::process::Command::new(self.install_path.join("steam.exe"))
+                        .args(args)
+                        .spawn().unwrap();
+                    return Ok(());
+                }
+                return Err(e);
+            },
+        }
 
         self.run(Some(args))?;
 

@@ -1,0 +1,15 @@
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld.exe"
+rustflags = [
+  "-Zshare-generics=n",
+  "-Zthreads=0",
+]
+
+[profile.rust-analyzer]
+inherits = "dev"
+
+[build]
+rustflags = ["-Zthreads=16", "-Ctarget-cpu=native"]
+
+# [env]
+# RUST_BACKTRACE="full"
