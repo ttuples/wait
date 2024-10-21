@@ -291,12 +291,12 @@ impl SteamModel {
             system.refresh_all();
 
             // Close steam if running
-            if system.processes_by_exact_name("steam.exe").count() > 0 {
+            if system.processes_by_exact_name(std::ffi::OsStr::new("steam.exe")).count() > 0 {
                 println!("Steam is running, closing...");
                 std::process::Command::new(steam_exe.clone()).arg("-exitsteam").output().unwrap();
 
                 // Wait for steam to close
-                while system.processes_by_exact_name("steam.exe").count() > 0 {
+                while system.processes_by_exact_name(std::ffi::OsStr::new("steam.exe")).count() > 0 {
                     std::thread::sleep(std::time::Duration::from_secs(1));
                     system.refresh_all();
                 }
