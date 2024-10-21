@@ -5,6 +5,7 @@ This is a niche application for people who have bought games across multiple acc
 ### Features
 - Standalone app (can be placed anywhere, save data is stored in appdata)
 - *Should* just work, the program will automatically detect all your installed games and accounts
+- Doesn't need to save passwords for the account switching (you have to use remember my login on steam)
 - Favorited games will appear at the top of the list
 - Search filter to find specific games quickly
 - SteamDB button which opens the games SteamDB page
