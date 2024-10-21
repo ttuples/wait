@@ -1,6 +1,6 @@
 # What Account Is This?
 Simple lightweight and fast steam game launcher, with a focus on automatically signing you into the correct saved account selection.
-This is a niche application for people like me who have bought games across multiple accounts.
+This is a niche application for people who have bought games across multiple accounts.
 
 ### Features
 - Standalone app (can be placed anywhere, save data is stored in registry)
@@ -11,10 +11,10 @@ This is a niche application for people like me who have bought games across mult
 - Also serves as just an account switcher using the drop down in the top left and login button
 - Displays game thumbnails either in portrait or landscape with the layout button
 
-![](https://i.imgur.com/jiEQXw0.png)
+![](https://i.imgur.com/eCgnNNq.png)
 
 ### TODO
 - Notifications
 - [x] Remember account selection for specific games
 - Add Hide functionality
-- Fix application not being resizable
+- [x] Fix application not being resizable
