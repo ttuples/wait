@@ -58,7 +58,6 @@ impl App {
         // Persisted state
         if let Some(storage) = cc.storage {
             let mut app: App = eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
-            app.grid_size = 200.0;
             app.steam_model = steam_model;
             app.thumbnail_cache = thumbnail_cache;
             app.selected_account = selected_account;
