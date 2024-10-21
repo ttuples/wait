@@ -1,6 +1,11 @@
 use std::str::Chars;
 use std::iter::Peekable;
 
+pub(crate) mod prelude {
+    pub(crate) use super::ManifestParseError;
+    pub(crate) use super::parse_manifest;
+}
+
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 #[derive(Debug, Clone)]

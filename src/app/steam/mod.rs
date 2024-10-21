@@ -1,87 +1,92 @@
-use std::{collections::HashMap, path::PathBuf};
+#![allow(unused)]
+mod data;
+use data::*;
+mod error;
+use error::LoginError;
+mod manifest;
+use manifest::prelude::*;
+
+use std::{collections::{HashMap, HashSet}, path::PathBuf};
 use registry::{Data, Hive, Security};
 use regex::Regex;
 use sysinfo::System;
 
-use super::manifest::{self, ManifestParseError};
-
-#[derive(Debug, Clone)]
-pub struct PathError {
-    pub path: PathBuf,
+pub mod prelude {
+    pub use super::error::LoginError;
+    pub use super::data::{SteamID, SteamAccount, AppID, Thumbnail};
+    pub use super::SteamModel;
 }
-
-impl std::fmt::Display for PathError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "Path does not exist: {:?}", self.path)
-    }
-}
-
-impl std::error::Error for PathError {}
-
-#[derive(Debug, Clone)]
-pub struct AlreadyLoggedInError;
-
-impl std::fmt::Display for AlreadyLoggedInError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "Already logged in")
-    }
-}
-
-impl std::error::Error for AlreadyLoggedInError {}
 
 static STEAM_ROOT: &str = r"Software\Valve\Steam";
 
-#[derive(Debug, Default, PartialEq, Eq, Clone)]
-pub struct SteamID {
-    pub id3: i64,
-    pub id64: i64,
-}
-
-#[derive(Debug, Default, PartialEq, Eq, Clone)]
-pub struct SteamAccount {
-    pub name: String,
-    pub id: Option<SteamID>,
-    pub games: Vec<i32>,
-}
-
-impl From<i64> for SteamID { // From SteamID64
-    fn from(id64: i64) -> Self {
-        Self {
-            id3: (id64 & 0xFFFFFFFF),
-            id64,
-        }
-    }
-}
-
+/// Steam Model
+/// 
+/// The Steam Model is a struct that contains all the data and functions required to interact with the Steam client.
+/// 
+/// # Variables
+/// 
+/// - `install_path` - The path to the Steam install directory
+/// - `current_user` - The current logged in user
+/// - `user_cache` - A vector of all detected users
+/// - `directories` - A hashmap of all detected directories and their associated games
+/// - `games` - A json object of all detected games and their manifests
 #[allow(unused)]
 #[derive(Debug, Default, Clone)]
 pub struct SteamModel {
-    pub path: PathBuf,
-    pub current_user: String,
+    pub install_path: PathBuf,
+    pub current_user: Option<SteamAccount>,
     pub user_cache: Vec<SteamAccount>,
-    pub directories: HashMap<PathBuf, Vec<i32>>,
-    pub games: serde_json::Value, // GameID: Manifest
+    pub directories: HashMap<PathBuf, HashSet<i32>>,
+    pub games: HashMap<AppID, serde_json::Value>, // GameID: Manifest
 }
 
 impl SteamModel {
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        // Get Steam install path
+        let regkey = Hive::CurrentUser.open(STEAM_ROOT, Security::Read)?;
+        let path = regkey.value("SteamPath")?;
+
         Ok(Self {
-            path: get_path()?,
-            current_user: get_current_user()?,
-            games: serde_json::Value::Object(serde_json::Map::new()), // GameID: Manifest
+            install_path: PathBuf::from(path.to_string()),
             ..Default::default()
         })
     }
 
+    /// Get the current logged in user
+    /// 
+    /// Returns the current logged in user as a [`SteamAccount`]
+    /// 
+    /// # Warning
+    /// 
+    /// This function requires [`SteamModel::detect_accounts`] to be called first
+    pub fn get_current_user(&self) -> Result<SteamAccount, Box<dyn std::error::Error>> {
+        let regkey = Hive::CurrentUser.open(STEAM_ROOT, Security::Read)?;
+        let user_name = regkey.value("AutoLoginUser")?.to_string();
+
+        // Convert username to SteamAccount
+        let user = match self.user_cache.iter().find(|x| x.name == user_name) {
+            Some(user) => user,
+            None => {
+                eprintln!("Failed to find user: {}", user_name);
+                return Err(Box::new(LoginError::Other("Failed to find user".to_string())));
+            },
+        };
+
+        Ok(user.clone())
+    }
+
+    /// Detect all accounts on the system
+    /// 
+    /// Returns a vector of [`SteamAccount`]s
     pub fn detect_accounts(&mut self) -> Result<&Vec<SteamAccount>, Box<dyn std::error::Error>> {
         let mut detected_accounts = Vec::new();
 
-        let config_path = self.path.join("config");
+        let config_path = self.install_path.join("config");
         let loginusers_path = config_path.join("loginusers.vdf");
 
         if !loginusers_path.exists() {
             eprintln!("Path does not exist: {:?}", loginusers_path);
-            return Err(Box::new(PathError { path: loginusers_path }));
+            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Loginusers path does not exist")));
         }
 
         // Parse loginusers.vdf
@@ -89,7 +94,7 @@ impl SteamModel {
             Ok(data) => data,
             Err(e) => {
                 eprintln!("Failed to parse manifest: {:?}", e);
-                return Err(Box::new(ManifestParseError));
+                return Err(Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, "Failed to parse loginusers manifest")));
             }
         };
 
@@ -115,20 +120,20 @@ impl SteamModel {
             let steamid: SteamID = SteamID::from(id);
 
             // Get account games
-            let mut user_games: Vec<i32> = Vec::new();
-            let user_path = self.path.join("userdata").join(format!("{}", steamid.id3));
+            let mut user_games: HashSet<i32> = HashSet::new();
+            let user_path = self.install_path.join("userdata").join(format!("{}", steamid.id3));
             let localconfig_path = user_path.join("config").join("localconfig.vdf");
 
             if !localconfig_path.exists() {
                 eprintln!("Path does not exist: {:?}", localconfig_path);
-                return Err(Box::new(PathError { path: localconfig_path }));
+                return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Localconfig path does not exist")));
             }
 
             let localconfig_data = match manifest::parse_manifest(localconfig_path) {
                 Ok(data) => data,
                 Err(e) => {
                     eprintln!("Failed to parse manifest: {:?}", e);
-                    return Err(Box::new(ManifestParseError));
+                    return Err(Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, "Failed to parse localconfig manifest")));
                 }
             };
 
@@ -157,7 +162,14 @@ impl SteamModel {
             };
 
             for (appid, _) in app_data.get("apps").unwrap().as_object().unwrap() {
-                user_games.push(appid.parse::<i32>().unwrap());
+                match appid.parse::<i32>() {
+                    Ok(appid) => {
+                        user_games.insert(appid);
+                    },
+                    Err(_) => {
+                        eprintln!("Failed to parse appid: {}", appid);
+                    },
+                }
             }
 
             detected_accounts.push(SteamAccount {
@@ -171,15 +183,18 @@ impl SteamModel {
         Ok(&self.user_cache)
     }
 
-    pub fn detect_installs(&mut self, path: PathBuf) -> Result<Vec<(i32, String)>, Box<dyn std::error::Error>> {
-        let mut detected_installs = Vec::new();
+    /// Detect all installed games from the detected install path
+    /// 
+    /// Returns a hashset of [`AppID`]s
+    pub fn detect_installs(&mut self) -> Result<HashSet<AppID>, Box<dyn std::error::Error>> {
+        let mut detected_installs = HashSet::<AppID>::new();
 
-        let steamapps_path = path.join("steamapps");
+        let steamapps_path = self.install_path.join("steamapps");
         let libfolder_path = steamapps_path.join("libraryfolders.vdf");
 
         if !libfolder_path.exists() {
             eprintln!("Path does not exist: {:?}", libfolder_path);
-            return Err(Box::new(PathError { path: libfolder_path }));
+            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Libraryfolders path does not exist")));
         }
 
         // Parse libraryfolders.vdf
@@ -187,7 +202,7 @@ impl SteamModel {
             Ok(data) => data,
             Err(e) => {
                 eprintln!("Failed to parse manifest: {:?}", e);
-                return Err(Box::new(ManifestParseError));
+                return Err(Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, "Failed to parse libraryfolders manifest")));
             }
         };
 
@@ -196,15 +211,15 @@ impl SteamModel {
         for (key, value) in libfolder_data.as_object().unwrap() {
             if re.is_match(key) {
                 let path = value.get("path").unwrap().as_str().unwrap();
-                let apps: Vec<i32> = match value.get("apps").unwrap().as_object() {
+                let apps: HashSet<i32> = match value.get("apps").unwrap().as_object() {
                     Some(data) => {
-                        if data.keys().next().unwrap().is_empty() {
-                            Vec::new()
-                        } else {
+                        if !data.keys().next().unwrap().is_empty() {
                             data.keys().map(|x| x.parse().unwrap()).collect()
+                        } else {
+                            Default::default()
                         }
                     },
-                    None => Vec::new(),
+                    None => Default::default(),
                 };
                 if apps.is_empty() {
                     eprintln!("No games detected for path {}", path);
@@ -226,13 +241,16 @@ impl SteamModel {
                             Ok(data) => data,
                             Err(e) => {
                                 eprintln!("Failed to parse manifest: {:?}", e);
-                                return Err(Box::new(ManifestParseError));
+                                return Err(Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, "Failed to parse game manifest")));
                             }
                         };
-                        let game_id = game_manifest.get("appid").unwrap().as_str().unwrap();
+                        let game_id = game_manifest.get("appid").unwrap().as_str().unwrap().parse::<i32>().unwrap();
                         let game_name = game_manifest.get("name").unwrap().as_str().unwrap();
-                        detected_installs.push((game_id.parse().unwrap(), game_name.to_string()));
-                        self.games.as_object_mut().unwrap().insert(game_id.parse().unwrap(), game_manifest);
+
+                        let app: AppID = (game_id, game_name).into();
+
+                        detected_installs.insert(app.clone());
+                        self.games.insert(app, game_manifest);
                     }
                 }
             }
@@ -240,38 +258,60 @@ impl SteamModel {
         Ok(detected_installs)
     }
 
-    pub fn game_thumbnail(&self, appid: &i32) -> Result<(Option<PathBuf>, Option<PathBuf>), Box<dyn std::error::Error>> {
-        let librarycache_path = self.path.join("appcache").join("librarycache");
-
-        let portrait_jpg = format!("{}_library_600x900.jpg", appid);
-        let portrait_png = format!("{}_library_600x900.png", appid);
-        let landscape_jpg = format!("{}_header.jpg", appid);
-        let landscape_png = format!("{}_header.png", appid);
-
-        let portrait = if librarycache_path.join(&portrait_jpg).exists() {
-            Some(librarycache_path.join(&portrait_jpg))
-        } else if librarycache_path.join(&portrait_png).exists() {
-            Some(librarycache_path.join(&portrait_png))
-        } else {
-            None
-        };
-
-        let landscape = if librarycache_path.join(&landscape_jpg).exists() {
-            Some(librarycache_path.join(&landscape_jpg))
-        } else if librarycache_path.join(&landscape_png).exists() {
-            Some(librarycache_path.join(&landscape_png))
-        } else {
-            None
-        };
-        
-        Ok((portrait, landscape))
+    /// Get all installed apps
+    /// 
+    /// Returns a vector of [`AppID`]s
+    pub fn get_installed_apps(&self) -> Vec<AppID> {
+        self.games.keys().cloned().collect()
     }
 
+    pub fn get_installed_apps_with_manifests(&self) -> &HashMap<AppID, serde_json::Value> {
+        &self.games
+    }
+
+    pub fn get_manifest_json(&self, appid: &AppID) -> Option<&serde_json::Value> {
+        self.games.get(appid)
+    }
+
+    /// Get the thumbnail for a game
+    /// 
+    /// Returns a [`Thumbnail`] struct containing the portrait and landscape paths
+    pub fn game_thumbnail(&self, appid: &i32) -> Result<Thumbnail, Box<dyn std::error::Error>> {
+        // println!("Getting thumbnail for appid: {}", appid);
+        let librarycache_path = self.install_path.join("appcache").join("librarycache");
+        let mut thumbnail: Thumbnail = Default::default();
+
+        let portrait = format!("{}_library_600x900", appid);
+        let landscape = format!("{}_header", appid);
+
+        for file_type in ["jpg", "png"].iter() {
+            let portrait_path = librarycache_path.join(format!("{}.{}", portrait, file_type));
+            let landscape_path = librarycache_path.join(format!("{}.{}", landscape, file_type));
+
+            if portrait_path.exists() {
+                // println!("Found portrait: {:?}", portrait_path);
+                thumbnail.portrait = Some(portrait_path);
+            }
+            if landscape_path.exists() {
+                // println!("Found landscape: {:?}", landscape_path);
+                thumbnail.landscape = Some(landscape_path);
+            }
+            if thumbnail.portrait.is_some() && thumbnail.landscape.is_some() {
+                break;
+            }
+        }
+
+        Ok(thumbnail)
+    }
+
+    /// Set the login account in registry
+    /// 
+    /// Sets the AutoLoginUser and RememberPassword values in the registry
     pub fn set_login_account(&self, account: &SteamAccount) -> Result<(), Box<dyn std::error::Error>> {
         let regkey = Hive::CurrentUser.open(STEAM_ROOT, Security::AllAccess)?;
 
         if regkey.value("AutoLoginUser")?.to_string() == account.name {
-            return Err(Box::new(AlreadyLoggedInError));
+            return Err(Box::new(LoginError::AlreadyLoggedIn));
         }
 
         // Set AutoLoginUser and RememberPassword
@@ -282,8 +322,9 @@ impl SteamModel {
         Ok(())
     }
 
+    /// Run steam with optional arguments
     pub fn run(&self, args: Option<Vec<String>>) -> Result<(), Box<dyn std::error::Error>> {
-        let steam_exe = self.path.join("steam.exe");
+        let steam_exe = self.install_path.join("steam.exe");
 
         // Spawn thread to start steam
         std::thread::spawn(move || {
@@ -291,12 +332,12 @@ impl SteamModel {
             system.refresh_all();
 
             // Close steam if running
-            if system.processes_by_exact_name(std::ffi::OsStr::new("steam.exe")).count() > 0 {
+            if system.processes_by_exact_name(std::ffi::OsStr::new("steam")).count() > 0 {
                 println!("Steam is running, closing...");
                 std::process::Command::new(steam_exe.clone()).arg("-exitsteam").output().unwrap();
 
                 // Wait for steam to close
-                while system.processes_by_exact_name(std::ffi::OsStr::new("steam.exe")).count() > 0 {
+                while system.processes_by_exact_name(std::ffi::OsStr::new("steam")).count() > 0 {
                     std::thread::sleep(std::time::Duration::from_secs(1));
                     system.refresh_all();
                 }
@@ -310,32 +351,40 @@ impl SteamModel {
                 .spawn().unwrap();
 
             // Exit the application
-            std::process::exit(0);
+            // std::process::exit(0);
         });
 
         Ok(())
     }
     
+    /// Initiate a login with the provided account
+    /// 
+    /// this function will set the login account and start steam
     pub fn login(&self, account: &SteamAccount) -> Result<(), Box<dyn std::error::Error>> {
         match self.set_login_account(account) {
             Ok(_) => (),
             Err(e) => {
-                if e.downcast_ref::<AlreadyLoggedInError>().is_some() {
-                    return Ok(());
+                if e.downcast_ref::<LoginError>().is_some_and(|e| e == &LoginError::AlreadyLoggedIn) {
+                    return Err(e);
                 }
             },
         }
+
+        println!("Successfully set login account: {}", account.name);
 
         self.run(None)?;
 
         Ok(())
     }
 
+    /// Launch a game with the provided account and appid
+    /// 
+    /// this function will login to the account and start the game
     pub fn launch_game(&self, account: &SteamAccount, appid: &i32) -> Result<(), Box<dyn std::error::Error>> {
         match self.set_login_account(account) {
             Ok(_) => (),
             Err(e) => {
-                if e.downcast_ref::<AlreadyLoggedInError>().is_none() {
+                if !e.downcast_ref::<LoginError>().is_some_and(|e| e == &LoginError::AlreadyLoggedIn) {
                     return Err(e);
                 }
             },
@@ -352,20 +401,4 @@ impl SteamModel {
 
         Ok(())
     }
-}
-
-pub fn get_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let regkey = Hive::CurrentUser.open(STEAM_ROOT, Security::Read)?;
-    let path = regkey.value("SteamPath")?;
-    Ok(
-        PathBuf::from(
-            path.to_string()
-        )
-    )
-}
-
-pub fn get_current_user() -> Result<String, Box<dyn std::error::Error>> {
-    let regkey = Hive::CurrentUser.open(STEAM_ROOT, Security::Read)?;
-    let user = regkey.value("AutoLoginUser")?;
-    Ok(user.to_string())
 }
