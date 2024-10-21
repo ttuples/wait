@@ -3,7 +3,7 @@ Simple lightweight and fast steam game launcher, with a focus on automatically s
 This is a niche application for people who have bought games across multiple accounts.
 
 ### Features
-- Standalone app (can be placed anywhere, save data is stored in registry)
+- Standalone app (can be placed anywhere, save data is stored in appdata)
 - *Should* just work, the program will automatically detect all your installed games and accounts
 - Favorited games will appear at the top of the list
 - Search filter to find specific games quickly
