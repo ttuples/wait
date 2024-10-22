@@ -10,7 +10,7 @@ This is a niche application for people who have bought games across multiple acc
 - Search filter to find specific games quickly
 - SteamDB button which opens the games SteamDB page
 - Also serves as just an account switcher using the drop down in the top left and login button
-- Displays game thumbnails either in portrait or landscape with the layout button
+- Displays game thumbnails either in portrait or landscape
 
 ![](https://i.imgur.com/wIgi0Yo.png)
 
