@@ -12,7 +12,7 @@ This is a niche application for people who have bought games across multiple acc
 - Also serves as just an account switcher using the drop down in the top left and login button
 - Displays game thumbnails either in portrait or landscape with the layout button
 
-![](https://i.imgur.com/PPAuYut.png)
+![](https://i.imgur.com/wIgi0Yo.png)
 
 ### TODO
 - Notifications
