@@ -17,5 +17,5 @@ This is a niche application for people who have bought games across multiple acc
 ### TODO
 - Notifications
 - [x] Remember account selection for specific games
-- Add Hide functionality
+- [x] Add Hide functionality
 - [x] Fix application not being resizable
