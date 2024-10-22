@@ -1,10 +1,21 @@
 pub mod steam;
-use egui::{Align, ImageSource, Layout, Vec2};
+use egui::{Align, Color32, ImageSource, Layout, Vec2};
 use egui_json_tree::JsonTree;
 use steam::prelude::*;
 
 use core::{f32, fmt};
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::{Mul, Sub}};
+
+macro_rules! steam_launch {
+    ($steam_model:expr, $account:expr, $app:expr, $close_after:expr) => {
+        match $steam_model.launch_game($account, &$app.id, $close_after) {
+            Ok(_) => {},
+            Err(e) => {
+                log::error!("Launch Error: {}", e);
+            }
+        }
+    };
+}
 
 #[derive(serde::Deserialize, serde::Serialize)]
 #[derive(Default)]
@@ -139,15 +150,11 @@ impl eframe::App for App {
                         });
                     
                     if ui.button("Login to Steam").clicked() {
-                        match self.steam_model.login(&self.selected_account) {
-                            Ok(_) => {
-                                // match self.close_after {
-                                //     CloseAfter::Login | CloseAfter::Both => {
-                                //         std::process::exit(0);
-                                //     },
-                                //     _ => {}
-                                // }
-                            },
+                        match self.steam_model.login(
+                            &self.selected_account,
+                            self.close_after == CloseAfter::Login || self.close_after == CloseAfter::Both
+                        ) {
+                            Ok(_) => {},
                             Err(e) => {
                                 log::error!("Login Error: {}", e);
                             }
@@ -186,7 +193,7 @@ impl eframe::App for App {
 
                                 egui::ComboBox::from_id_salt("Game Account")
                                     .width(ui.available_width())
-                                    .selected_text(format!("{}", self.saved_logins.get(app).unwrap().name()))
+                                    .selected_text(format!("{}", self.saved_logins.get(app).expect("Game account was not properly initialized!").name()))
                                     .show_ui(ui, |ui| {
                                         for steam_account in &self.steam_model.user_cache {
                                             ui.selectable_value(
@@ -201,12 +208,12 @@ impl eframe::App for App {
                                 ui.horizontal(|ui| {
                                     let width = ui.available_width() / 2.0 - ui.spacing().item_spacing.x / 2.0;
                                     if ui.add_sized(Vec2::new(width, 40.0), egui::Button::new("Launch")).clicked() {
-                                        match self.steam_model.launch_game(self.saved_logins.get(app).unwrap_or(&self.selected_account), &app.id) {
-                                            Ok(_) => {},
-                                            Err(e) => {
-                                                eprintln!("Error: {}", e);
-                                            }
-                                        }
+                                        steam_launch!(
+                                            self.steam_model,
+                                            self.saved_logins.get(app).expect("Game account was not properly initialized!"),
+                                            app,
+                                            self.close_after == CloseAfter::Launch || self.close_after == CloseAfter::Both
+                                        );
                                     }
                                     if ui.add_sized(Vec2::new(width, 40.0), egui::Button::new("SteamDB")).clicked() {
                                         let url = format!("https://steamdb.info/app/{}", app.id);
@@ -223,7 +230,7 @@ impl eframe::App for App {
                                     .show(ui, |ui| {
                                         ui.expand_to_include_x(ui.available_width());
                                         ui.collapsing("Manifest", |ui| {
-                                            if let Some(manifest) = self.steam_model.get_manifest_json(&app) {
+                                            if let Some(manifest) = self.steam_model.get_app_manifest(&app) {
                                                 JsonTree::new("", manifest).show(ui);
                                             }
                                         });
@@ -252,15 +259,14 @@ impl eframe::App for App {
                             .desired_width(300.0)
                     );
 
-                    //TODO: Implement close after
-                    // egui::ComboBox::from_label("Close After")
-                    //     .selected_text(format!("{}", self.close_after))
-                    //     .show_ui(ui, |ui| {
-                    //         ui.selectable_value(&mut self.close_after, CloseAfter::None, "None");
-                    //         ui.selectable_value(&mut self.close_after, CloseAfter::Launch, "Launch");
-                    //         ui.selectable_value(&mut self.close_after, CloseAfter::Login, "Login");
-                    //         ui.selectable_value(&mut self.close_after, CloseAfter::Both, "Both");
-                    //     });
+                    egui::ComboBox::from_label("Close After")
+                        .selected_text(format!("{}", self.close_after))
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut self.close_after, CloseAfter::None, CloseAfter::None.to_string());
+                            ui.selectable_value(&mut self.close_after, CloseAfter::Launch, CloseAfter::Launch.to_string());
+                            ui.selectable_value(&mut self.close_after, CloseAfter::Login, CloseAfter::Login.to_string());
+                            ui.selectable_value(&mut self.close_after, CloseAfter::Both, CloseAfter::Both.to_string());
+                        });
                 });
 
                 ui.separator();
@@ -320,7 +326,6 @@ impl App {
                 if let Some(portrait) = thumbnail.portrait {
                     return egui::Image::new(format!("file://{}", portrait.to_string_lossy()));
                 } else {
-                    log::info!("Portrait thumbnail not found for {}, using steam cdn", app.name);
                     return egui::Image::new(ImageSource::Uri(format!("https://steamcdn-a.akamaihd.net/steam/apps/{}/library_600x900.jpg", app.id).into()));
                 }
             },
@@ -328,7 +333,6 @@ impl App {
                 if let Some(landscape) = thumbnail.landscape {
                     return egui::Image::new(format!("file://{}", landscape.to_string_lossy()));
                 } else {
-                    log::info!("Landscape thumbnail not found for {}, using steam cdn", app.name);
                     return egui::Image::new(ImageSource::Uri(format!("https://steamcdn-a.akamaihd.net/steam/apps/{}/header.jpg", app.id).into()));
                 }
             }
@@ -339,34 +343,48 @@ impl App {
         where T: IntoIterator<Item = AppID>
     {
         let cols = (ui.available_width() / self.grid_size).floor() as usize;
-        // let rows = apps.len().div_ceil(cols);
-        let total_item_width = self.grid_size * cols as f32;
-        let remaining_space = ui.available_width() - total_item_width;
-        let spacing = if cols > 1 { remaining_space / (cols - 1) as f32 } else { 0.0 };
+        let total_item_width:   f32 = self.grid_size * cols as f32;
+        let remaining_space:    f32 = ui.available_width() - total_item_width;
+        let spacing:            f32 = if cols > 1 { remaining_space / (cols - 1) as f32 } else { 0.0 };
+        let inner_margin:       f32 = 1.5;
 
-        let img_width = self.grid_size;
+        let img_width = self.grid_size - inner_margin.mul(2.0);
         let img_height = match self.thumbnail_mode {
             ThumbnailMode::Portrait => self.grid_size * 1.5,
             ThumbnailMode::Landscape => self.grid_size * 0.75
-        };
+        }.sub(inner_margin.mul(2.0));
 
         egui::Grid::new("game_grid")
             .num_columns(cols)
             .spacing(Vec2::new(spacing, spacing))
             .show(ui, |ui| {
                 for (i, app) in apps.into_iter().enumerate() {
-                    let response = ui.add(
-                        self.get_thumbnail_image(&app)
-                            .fit_to_exact_size(Vec2::new(img_width, img_height))
-                            .rounding(10.0)
-                            .sense(egui::Sense::click())
-                    );
 
-                    self.game_context(&response, &app);
+                    egui::Frame::default()
+                        .fill(
+                            if self.selected_app == Some(app.clone()) {
+                                Color32::from_rgb(255, 255, 255)
+                            } else {
+                                Color32::from_rgb(50, 50, 50)
+                            }
+                        )
+                        .rounding(10.0)
+                        .inner_margin(inner_margin)
+                        .show(ui, |ui| {
+                            let response = ui.add(
+                                self.get_thumbnail_image(&app)
+                                    .fit_to_exact_size(Vec2::new(img_width, img_height))
+                                    .rounding(8.5)
+                                    .sense(egui::Sense::click())
+                            );
+        
+                            self.game_context(&response, &app);
+                            
+                            if response.clicked() {
+                                self.selected_app = Some(app);
+                            }
+                        });
 
-                    if response.clicked() {
-                        self.selected_app = Some(app);
-                    }
 
                     if (i + 1) % cols == 0 { ui.end_row(); }
                 }
@@ -376,7 +394,12 @@ impl App {
     fn game_context(&mut self, response: &egui::Response, app: &AppID) {
         response.context_menu(|ui| {
             if ui.button("Launch").clicked() {
-                self.launch(app);
+                steam_launch!(
+                    self.steam_model,
+                    self.saved_logins.get(app).expect("Game account was not properly initialized!"),
+                    app,
+                    self.close_after == CloseAfter::Launch || self.close_after == CloseAfter::Both
+                );
                 ui.close_menu();
             }
             if self.favorites.contains(&app) {
@@ -394,21 +417,5 @@ impl App {
                 }
             }
         });
-    }
-
-    fn launch(&mut self, app: &AppID) {
-        match self.steam_model.launch_game(self.saved_logins.get(app).unwrap(), &app.id) {
-            Ok(_) => {
-                // match self.close_after {
-                //     CloseAfter::Launch | CloseAfter::Both => {
-                //         std::process::exit(0)
-                //     },
-                //     _ => {}
-                // }
-            },
-            Err(e) => {
-                log::error!("Launch Error: {}", e);
-            }
-        }
     }
 }

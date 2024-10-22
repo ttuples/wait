@@ -20,6 +20,14 @@ pub mod prelude {
 
 static STEAM_ROOT: &str = r"Software\Valve\Steam";
 
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+macro_rules! steam_command {
+    ($exec:expr, $args:expr) => {
+        std::process::Command::new($exec).args($args)
+    };
+}
+
 /// Steam Model
 /// 
 /// The Steam Model is a struct that contains all the data and functions required to interact with the Steam client.
@@ -42,7 +50,7 @@ pub struct SteamModel {
 }
 
 impl SteamModel {
-    pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new() -> Result<Self> {
         // Get Steam install path
         let regkey = Hive::CurrentUser.open(STEAM_ROOT, Security::Read)?;
         let path = regkey.value("SteamPath")?;
@@ -60,7 +68,7 @@ impl SteamModel {
     /// # Warning
     /// 
     /// This function requires [`SteamModel::detect_accounts`] to be called first
-    pub fn get_current_user(&self) -> Result<SteamAccount, Box<dyn std::error::Error>> {
+    pub fn get_current_user(&self) -> Result<SteamAccount> {
         let regkey = Hive::CurrentUser.open(STEAM_ROOT, Security::Read)?;
         let user_name = regkey.value("AutoLoginUser")?.to_string();
 
@@ -79,7 +87,7 @@ impl SteamModel {
     /// Detect all accounts on the system
     /// 
     /// Returns a vector of [`SteamAccount`]s
-    pub fn detect_accounts(&mut self) -> Result<&Vec<SteamAccount>, Box<dyn std::error::Error>> {
+    pub fn detect_accounts(&mut self) -> Result<&Vec<SteamAccount>> {
         let mut detected_accounts = Vec::new();
 
         let config_path = self.install_path.join("config");
@@ -187,7 +195,7 @@ impl SteamModel {
     /// Detect all installed games from the detected install path
     /// 
     /// Returns a hashset of [`AppID`]s
-    pub fn detect_installs(&mut self) -> Result<HashSet<AppID>, Box<dyn std::error::Error>> {
+    pub fn detect_installs(&mut self) -> Result<HashSet<AppID>> {
         let mut detected_installs = HashSet::<AppID>::new();
 
         let steamapps_path = self.install_path.join("steamapps");
@@ -270,14 +278,14 @@ impl SteamModel {
         &self.games
     }
 
-    pub fn get_manifest_json(&self, appid: &AppID) -> Option<&serde_json::Value> {
+    pub fn get_app_manifest(&self, appid: &AppID) -> Option<&serde_json::Value> {
         self.games.get(appid)
     }
 
     /// Get the thumbnail for a game
     /// 
     /// Returns a [`Thumbnail`] struct containing the portrait and landscape paths
-    pub fn game_thumbnail(&self, appid: &i32) -> Result<Thumbnail, Box<dyn std::error::Error>> {
+    pub fn game_thumbnail(&self, appid: &i32) -> Result<Thumbnail> {
         // println!("Getting thumbnail for appid: {}", appid);
         let librarycache_path = self.install_path.join("appcache").join("librarycache");
         let mut thumbnail: Thumbnail = Default::default();
@@ -290,11 +298,9 @@ impl SteamModel {
             let landscape_path = librarycache_path.join(format!("{}.{}", landscape, file_type));
 
             if portrait_path.exists() {
-                // println!("Found portrait: {:?}", portrait_path);
                 thumbnail.portrait = Some(portrait_path);
             }
             if landscape_path.exists() {
-                // println!("Found landscape: {:?}", landscape_path);
                 thumbnail.landscape = Some(landscape_path);
             }
             if thumbnail.portrait.is_some() && thumbnail.landscape.is_some() {
@@ -308,7 +314,7 @@ impl SteamModel {
     /// Set the login account in registry
     /// 
     /// Sets the AutoLoginUser and RememberPassword values in the registry
-    pub fn set_login_account(&self, account: &SteamAccount) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn set_login_account(&self, account: &SteamAccount) -> Result<()> {
         let regkey = Hive::CurrentUser.open(STEAM_ROOT, Security::AllAccess)?;
 
         if regkey.value("AutoLoginUser")?.to_string() == account.name {
@@ -324,36 +330,33 @@ impl SteamModel {
     }
 
     /// Run steam with optional arguments
-    pub fn run(&self, args: Option<Vec<String>>) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn restart(&self, args: Option<Vec<String>>, exit_after: bool) -> Result<()> {
         let steam_exe = self.install_path.join("steam.exe");
 
         // Spawn thread to start steam
         std::thread::spawn(move || {
             let mut system = System::new_all();
-            system.refresh_all();
 
             // Close steam if running
             if system.processes_by_exact_name("steam.exe".as_ref()).count() > 0 {
-                println!("Steam is running, closing...");
-                std::process::Command::new(steam_exe.clone()).arg("-exitsteam").output().unwrap();
+                eprintln!("Steam is running, closing...");
+                steam_command!(&steam_exe, ["-exitsteam"]).output().expect("Failed to close Steam");
 
                 // Wait for steam to close
                 while system.processes_by_exact_name("steam.exe".as_ref()).count() > 0 {
-                    println!("Waiting for Steam to close...");
+                    eprintln!("Waiting for Steam to close...");
                     std::thread::sleep(std::time::Duration::from_secs(1));
-                    system = System::new_all();
+                    system = System::new_all(); // system.refresh_all() just doesn't work ig ¯\_(ツ)_/¯
                 }
-                println!("Steam closed");
+                eprintln!("Steam closed");
             }
 
             // Start steam
-            println!("Starting Steam with args: {:?}", args.clone().unwrap_or(vec![]));
-            std::process::Command::new(steam_exe)
-                .args(args.unwrap_or(vec![]))
-                .spawn().unwrap();
+            eprintln!("Starting Steam with args: {:?}", args.clone().unwrap_or(vec![]));
+            steam_command!(&steam_exe, args.unwrap_or(vec![])).spawn().expect("Failed to start Steam");
 
             // Exit the application
-            std::process::exit(0);
+            if exit_after { std::process::exit(0); }
         });
 
         Ok(())
@@ -362,7 +365,7 @@ impl SteamModel {
     /// Initiate a login with the provided account
     /// 
     /// this function will set the login account and start steam
-    pub fn login(&self, account: &SteamAccount) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn login(&self, account: &SteamAccount, exit_after: bool) -> Result<()> {
         match self.set_login_account(account) {
             Ok(_) => (),
             Err(e) => {
@@ -370,9 +373,9 @@ impl SteamModel {
             },
         }
 
-        println!("Successfully set login account: {}", account.name);
+        eprintln!("Successfully set login account: {}", account.name);
 
-        self.run(None)?;
+        self.restart(None, exit_after)?;
 
         Ok(())
     }
@@ -380,10 +383,8 @@ impl SteamModel {
     /// Launch a game with the provided account and appid
     /// 
     /// this function will login to the account and start the game
-    pub fn launch_game(&self, account: &SteamAccount, appid: &i32) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn launch_game(&self, account: &SteamAccount, appid: &i32, close_after: bool) -> Result<()> {
         let args = vec![
-            "-noreactlogin".to_string(),
-            "-silent".to_string(),
             "-applaunch".to_string(),
             appid.to_string(),
         ];
@@ -401,7 +402,7 @@ impl SteamModel {
             },
         }
 
-        self.run(Some(args))?;
+        self.restart(Some(args), close_after)?;
 
         Ok(())
     }
