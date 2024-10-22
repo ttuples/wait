@@ -22,6 +22,7 @@ macro_rules! steam_launch {
 #[serde(default)]
 pub struct App {
     favorites: Vec<AppID>,
+    hidden: Vec<AppID>,
     saved_logins: HashMap<AppID, SteamAccount>,
     thumbnail_mode: ThumbnailMode,
     grid_size: f32,
@@ -277,16 +278,19 @@ impl eframe::App for App {
                         .show(ui, |ui| {
                             if self.favorites.len() > 0 {
                                 self.game_grid(ui,
-                                    match self.search_filter {
-                                        ref s if s.is_empty() => self.favorites.clone(),
-                                        ref s => self.favorites.clone().iter().filter_map(|app| {
-                                            if app.name.to_lowercase().contains(s) {
+                                    self.favorites.iter().filter_map(|app| {
+                                        if !self.hidden.contains(app) {
+                                            if self.search_filter.is_empty() {
+                                                Some(app.clone())
+                                            } else if app.name.to_lowercase().contains(&self.search_filter) {
                                                 Some(app.clone())
                                             } else {
                                                 None
                                             }
-                                        }).collect()
-                                    }
+                                        } else {
+                                            None
+                                        }
+                                    }).collect::<Vec<AppID>>()
                                 );
                             }
                         }
@@ -298,17 +302,31 @@ impl eframe::App for App {
                         .default_open(true)
                         .show(ui, |ui| {
                             self.game_grid(ui,
-                                match self.search_filter {
-                                    ref s if s.is_empty() => self.steam_model.get_installed_apps(),
-                                    ref s => self.steam_model.get_installed_apps().iter().filter_map(|app| {
-                                        if app.name.to_lowercase().contains(s) {
+                                self.steam_model.get_installed_apps().iter().filter_map(|app| {
+                                    if !self.hidden.contains(app) {
+                                        if self.search_filter.is_empty() {
+                                            Some(app.clone())
+                                        } else if app.name.to_lowercase().contains(&self.search_filter) {
                                             Some(app.clone())
                                         } else {
                                             None
                                         }
-                                    }).collect()
-                                }
+                                    } else {
+                                        None
+                                    }
+                                }).collect::<Vec<AppID>>()
                             );
+                        }
+                    );
+
+                    ui.separator();
+
+                    egui::CollapsingHeader::new(format!("Hidden ({})", self.hidden.len()))
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            if self.hidden.len() > 0 {
+                                self.game_grid(ui, self.hidden.clone());
+                            }
                         }
                     );
                 });
@@ -412,7 +430,15 @@ impl App {
                     self.favorites.push(app.clone());
                     ui.close_menu();
                 }
-                if ui.button("Hide").double_clicked() { // Only show hide option for non-favorites
+            }
+            if self.hidden.contains(&app) {
+                if ui.button("Unhide").clicked() {
+                    self.hidden.retain(|x| x != app);
+                    ui.close_menu();
+                }
+            } else {
+                if ui.button("Hide").clicked() {
+                    self.hidden.push(app.clone());
                     ui.close_menu();
                 }
             }
