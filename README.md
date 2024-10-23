@@ -18,4 +18,4 @@ This is a niche application for people who have bought games across multiple acc
 
 ![](https://i.imgur.com/wIgi0Yo.png)
 # Themes!
-![](https://i.imgur.com/2lPigPX.png)
+![](https://i.imgur.com/L542Khs.png)
