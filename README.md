@@ -13,9 +13,11 @@ This is a niche application for people who have bought games across multiple acc
 - Displays game thumbnails either in portrait or landscape
 
 ![](https://i.imgur.com/wIgi0Yo.png)
+# Themes!
+![](https://i.imgur.com/2lPigPX.png)
 
 ### TODO
-- Notifications
+- [x] Notifications
 - [x] Remember account selection for specific games
 - [x] Add Hide functionality
 - [x] Fix application not being resizable
