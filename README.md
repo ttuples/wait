@@ -11,13 +11,11 @@ This is a niche application for people who have bought games across multiple acc
 - SteamDB button which opens the games SteamDB page
 - Also serves as just an account switcher using the drop down in the top left and login button
 - Displays game thumbnails either in portrait or landscape
+- Selectable application exit parameter (after login/launch/both/none)
+- Remembers account selection individual games
+- Sort games by name or last played
+- Hide games
 
 ![](https://i.imgur.com/wIgi0Yo.png)
 # Themes!
 ![](https://i.imgur.com/2lPigPX.png)
-
-### TODO
-- [x] Notifications
-- [x] Remember account selection for specific games
-- [x] Add Hide functionality
-- [x] Fix application not being resizable
