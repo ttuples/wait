@@ -238,10 +238,9 @@ impl SteamModel {
                 self.directories.insert(PathBuf::from(path), apps);
 
                 // Load paths game manifests
-                let steamapps_path = format!("{}\\steamapps", path);
-                for entry in std::fs::read_dir(steamapps_path)? {
-                    let entry = entry?;
-                    let entry_path = entry.path();
+                let steamapps_path = PathBuf::from(format!("{}\\steamapps", path));
+                for entry in std::fs::read_dir(steamapps_path.clone())? {
+                    let entry_path = entry?.path();
                     if let Some(ext) = entry_path.extension() {
                         if ext != "acf" {
                             continue;
@@ -255,8 +254,18 @@ impl SteamModel {
                         };
                         let game_id = game_manifest.get("appid").unwrap().as_str().unwrap().parse::<i32>().unwrap();
                         let game_name = game_manifest.get("name").unwrap().as_str().unwrap();
+                        let install_dir = game_manifest.get("installdir").unwrap().as_str().unwrap();
+                        let last_played = match game_manifest.get("LastPlayed") {
+                            Some(data) => data.as_str().unwrap().parse::<u64>().ok(),
+                            None => None,
+                        };
 
-                        let app: AppID = (game_id, game_name).into();
+                        let app: AppID = AppID {
+                            id: game_id,
+                            name: game_name.to_string(),
+                            location: steamapps_path.join("common").join(install_dir),
+                            last_played,
+                        };
 
                         detected_installs.insert(app.clone());
                         self.games.insert(app, game_manifest);

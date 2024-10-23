@@ -42,12 +42,8 @@ impl SteamAccount {
 pub struct AppID {
     pub id: i32,
     pub name: String,
-}
-
-impl From<(i32, &str)> for AppID {
-    fn from((id, name): (i32, &str)) -> Self {
-        Self { id, name: name.to_string() }
-    }
+    pub location: PathBuf,
+    pub last_played: Option<u64>,
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
