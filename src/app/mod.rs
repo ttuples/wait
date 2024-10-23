@@ -191,11 +191,14 @@ impl eframe::App for App {
         visuals.override_text_color = Some(self.theme.text);
 
         visuals.widgets.noninteractive.bg_fill = self.theme.secondary;
-        visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, self.theme.primary);
+        visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.5, self.theme.primary);
         visuals.widgets.inactive.bg_fill = self.theme.secondary;
-        visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, self.theme.primary);
+        visuals.widgets.inactive.weak_bg_fill = self.theme.secondary;
+        visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.5, self.theme.primary);
+        visuals.widgets.hovered.weak_bg_fill = self.theme.secondary;
         visuals.widgets.active.bg_fill = self.theme.secondary;
-        visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0, self.theme.primary);
+        visuals.widgets.active.fg_stroke = egui::Stroke::new(1.5, self.theme.primary);
+        visuals.widgets.active.weak_bg_fill = self.theme.secondary;
 
         ctx.set_visuals(visuals);
 
