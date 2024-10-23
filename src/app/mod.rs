@@ -123,7 +123,7 @@ impl fmt::Display for CloseAfter {
 }
 
 impl App {
-    pub fn new(cc: &eframe::CreationContext<'_>, steam_model: SteamModel) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, steam_model: SteamModel, created: std::time::Instant) -> Self {
         // Update thumbnail cache
         let thumbnail_cache: HashMap<AppID, Thumbnail> = steam_model
             .get_installed_apps()
@@ -156,24 +156,27 @@ impl App {
         log::info!("Current loggin account: {}", selected_account.name());
 
         // Persisted state
+        let mut app: App;
         if let Some(storage) = cc.storage {
-            let mut app: App = eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+            app = eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
             app.steam_model = steam_model;
             app.thumbnail_cache = thumbnail_cache;
             app.selected_account = selected_account;
             log::info!("Restored state");
-            return app;
+        } else {
+            app = Self {
+                grid_size: 200.0,
+                steam_model,
+                thumbnail_cache,
+                selected_account,
+                ..Default::default()
+            };
+            log::info!("No persisted state found. Applying default state");
         }
+        
+        app.toasts.info(format!("Application loaded in {}ms", created.elapsed().as_millis()));
 
-        log::info!("No persisted state found. Applying default state");
-        // Default state
-        Self {
-            grid_size: 200.0,
-            steam_model,
-            thumbnail_cache,
-            selected_account,
-            ..Default::default()
-        }
+        app
     }
 }
 

@@ -18,6 +18,8 @@ fn main() {
         ..Default::default()
     };
 
+    let start = std::time::Instant::now();
+
     let mut steam_model = match SteamModel::new() {
         Ok(steam_model) => steam_model,
         Err(err) => {
@@ -60,7 +62,7 @@ fn main() {
         native_options,
         Box::new(|cc| {
             egui_extras::install_image_loaders(&cc.egui_ctx);
-            Ok(Box::new(app::App::new(cc, steam_model)))
+            Ok(Box::new(app::App::new(cc, steam_model, start)))
         }),
     ) {
         Ok(_) => {}
