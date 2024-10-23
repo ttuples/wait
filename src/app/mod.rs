@@ -1,6 +1,6 @@
 pub mod steam;
-mod custom_popup;
-use custom_popup::custom_popup;
+mod widgets;
+use widgets::theme_popup;
 
 use egui::{Align, Color32, ImageSource, Layout, Vec2};
 use egui_json_tree::JsonTree;
@@ -356,7 +356,7 @@ impl eframe::App for App {
                             self.theme_popup = !self.theme_popup;
                         };
                         if self.theme_popup {
-                            custom_popup(ui, &response, |ui| {
+                            theme_popup(ui, &response, |ui| {
                                 ui.color_edit_button_srgba(&mut self.theme.primary);
                                 ui.color_edit_button_srgba(&mut self.theme.secondary);
                                 ui.color_edit_button_srgba(&mut self.theme.background);

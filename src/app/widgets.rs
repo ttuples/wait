@@ -2,7 +2,7 @@ use egui::{Align, Align2, Area, Frame, Key, Layout, Order, Response, Ui, UiKind}
 
 
 
-pub fn custom_popup<R>(
+pub fn theme_popup<R>(
     parent_ui: &Ui,
     widget_response: &Response,
     add_contents: impl FnOnce(&mut Ui) -> R,
