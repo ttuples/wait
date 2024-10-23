@@ -1,10 +1,15 @@
 pub mod steam;
+mod custom_popup;
+use custom_popup::custom_popup;
+
 use egui::{Align, Color32, ImageSource, Layout, Vec2};
 use egui_json_tree::JsonTree;
+use egui_notify::Toasts;
 use steam::prelude::*;
 
 use core::{f32, fmt};
 use std::{collections::HashMap, ops::{Mul, Sub}};
+// use std::sync::mpsc::{Sender, Receiver, channel};
 
 macro_rules! steam_launch {
     ($steam_model:expr, $account:expr, $app:expr, $close_after:expr) => {
@@ -18,7 +23,6 @@ macro_rules! steam_launch {
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
-#[derive(Default)]
 #[serde(default)]
 pub struct App {
     favorites: Vec<AppID>,
@@ -27,6 +31,7 @@ pub struct App {
     thumbnail_mode: ThumbnailMode,
     grid_size: f32,
     close_after: CloseAfter,
+    theme: Theme,
 
     #[serde(skip)]
     steam_model: SteamModel,
@@ -38,6 +43,34 @@ pub struct App {
     selected_app: Option<AppID>,
     #[serde(skip)]
     search_filter: String,
+    #[serde(skip)]
+    toasts: Toasts,
+    // #[serde(skip)]
+    // toast_channel: (Sender<String>, Receiver<String>),
+    #[serde(skip)]
+    theme_popup: bool,
+}
+
+impl Default for App {
+    fn default() -> Self {
+        Self {
+            favorites: Vec::new(),
+            hidden: Vec::new(),
+            saved_logins: HashMap::new(),
+            thumbnail_mode: ThumbnailMode::Portrait,
+            grid_size: 200.0,
+            close_after: CloseAfter::None,
+            theme: Theme::default(),
+            theme_popup: false,
+            steam_model: SteamModel::default(),
+            thumbnail_cache: HashMap::new(),
+            selected_account: SteamAccount::default(),
+            selected_app: None,
+            search_filter: String::default(),
+            toasts: Toasts::default(),
+            // toast_channel: channel(),
+        }
+    }
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -56,6 +89,26 @@ enum CloseAfter {
     Launch,
     Login,
     Both
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct Theme {
+    pub primary: Color32,
+    pub secondary: Color32,
+    pub background: Color32,
+    pub text: Color32,
+}
+
+impl Default for Theme {
+    fn default() -> Self {
+        Self {
+            primary: Color32::from_rgb(180, 180, 180),
+            secondary: Color32::from_rgb(60, 60, 60),
+            background: Color32::from_rgb(27, 27, 27),
+            text: Color32::from_rgb(171, 171, 171),
+        }
+    }
 }
 
 impl fmt::Display for CloseAfter {
@@ -130,9 +183,26 @@ impl eframe::App for App {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.toasts.show(ctx);
+
+        // Update theme
+        let mut visuals = egui::Visuals::dark();
+
+        visuals.override_text_color = Some(self.theme.text);
+
+        visuals.widgets.noninteractive.bg_fill = self.theme.secondary;
+        visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, self.theme.primary);
+        visuals.widgets.inactive.bg_fill = self.theme.secondary;
+        visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, self.theme.primary);
+        visuals.widgets.active.bg_fill = self.theme.secondary;
+        visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0, self.theme.primary);
+
+        ctx.set_visuals(visuals);
+
         egui::SidePanel::left("side_panel")
             .min_width(200.0)
             .resizable(true)
+            .frame(egui::Frame::default().fill(self.theme.background).inner_margin(egui::Margin::same(8.0)))
             .show(ctx, |ui| {
                 ui.vertical_centered_justified(|ui| {
                     ui.heading("Steam Account");
@@ -151,6 +221,7 @@ impl eframe::App for App {
                         });
                     
                     if ui.button("Login to Steam").clicked() {
+                        self.toasts.info(format!("Logging in as {}", self.selected_account.name()));
                         match self.steam_model.login(
                             &self.selected_account,
                             self.close_after == CloseAfter::Login || self.close_after == CloseAfter::Both
@@ -197,11 +268,13 @@ impl eframe::App for App {
                                     .selected_text(format!("{}", self.saved_logins.get(app).expect("Game account was not properly initialized!").name()))
                                     .show_ui(ui, |ui| {
                                         for steam_account in &self.steam_model.user_cache {
-                                            ui.selectable_value(
+                                            if ui.selectable_value(
                                                 &mut *self.saved_logins.get_mut(app).unwrap(),
                                                 steam_account.clone(),
                                                 steam_account.name(),
-                                            );
+                                            ).clicked() {
+                                                self.toasts.info(format!("Updated game \"{}\" to account \"{}\"", app.name, steam_account.name()));
+                                            }
                                         }
                                     });
 
@@ -209,6 +282,7 @@ impl eframe::App for App {
                                 ui.horizontal(|ui| {
                                     let width = ui.available_width() / 2.0 - ui.spacing().item_spacing.x / 2.0;
                                     if ui.add_sized(Vec2::new(width, 40.0), egui::Button::new("Launch")).clicked() {
+                                        self.toasts.info(format!("Launching {}", app.name));
                                         steam_launch!(
                                             self.steam_model,
                                             self.saved_logins.get(app).expect("Game account was not properly initialized!"),
@@ -242,43 +316,86 @@ impl eframe::App for App {
             }
         );
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.vertical(|ui| {
-                ui.horizontal(|ui| {
-                    ui.heading("Steam Library");
-                    ui.radio_value(&mut self.thumbnail_mode, ThumbnailMode::Portrait, "Portrait");
-                    ui.radio_value(&mut self.thumbnail_mode, ThumbnailMode::Landscape, "Landscape");
-                    ui.add(
-                        egui::Slider::new(&mut self.grid_size, 30.0..=400.0)
-                            .text("Grid Size")
-                            .step_by(10.0)
-                            .clamping(egui::SliderClamping::Always)
-                    );
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.search_filter)
-                            .hint_text("Search")
-                            .desired_width(300.0)
-                    );
+        egui::CentralPanel::default()
+            .frame(egui::Frame::default().fill(self.theme.background).inner_margin(egui::Margin::same(8.0)))
+            .show(ctx, |ui| {
+                ui.vertical(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.heading("Steam Library");
+                        ui.radio_value(&mut self.thumbnail_mode, ThumbnailMode::Portrait, "Portrait");
+                        ui.radio_value(&mut self.thumbnail_mode, ThumbnailMode::Landscape, "Landscape");
+                        ui.add(
+                            egui::Slider::new(&mut self.grid_size, 30.0..=400.0)
+                                .text("Grid Size")
+                                .step_by(10.0)
+                                .clamping(egui::SliderClamping::Always)
+                        );
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.search_filter)
+                                .hint_text("Search")
+                                .desired_width(300.0)
+                        );
 
-                    egui::ComboBox::from_label("Close After")
-                        .selected_text(format!("{}", self.close_after))
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut self.close_after, CloseAfter::None, CloseAfter::None.to_string());
-                            ui.selectable_value(&mut self.close_after, CloseAfter::Launch, CloseAfter::Launch.to_string());
-                            ui.selectable_value(&mut self.close_after, CloseAfter::Login, CloseAfter::Login.to_string());
-                            ui.selectable_value(&mut self.close_after, CloseAfter::Both, CloseAfter::Both.to_string());
-                        });
-                });
+                        egui::ComboBox::from_label("Close After")
+                            .selected_text(format!("{}", self.close_after))
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(&mut self.close_after, CloseAfter::None, CloseAfter::None.to_string());
+                                ui.selectable_value(&mut self.close_after, CloseAfter::Launch, CloseAfter::Launch.to_string());
+                                ui.selectable_value(&mut self.close_after, CloseAfter::Login, CloseAfter::Login.to_string());
+                                ui.selectable_value(&mut self.close_after, CloseAfter::Both, CloseAfter::Both.to_string());
+                            });
 
-                ui.separator();
+                        let response = ui.button("Theme");
+                        if response.clicked() {
+                            self.theme_popup = !self.theme_popup;
+                        };
+                        if self.theme_popup {
+                            custom_popup(ui, &response, |ui| {
+                                ui.color_edit_button_srgba(&mut self.theme.primary);
+                                ui.color_edit_button_srgba(&mut self.theme.secondary);
+                                ui.color_edit_button_srgba(&mut self.theme.background);
+                                ui.color_edit_button_srgba(&mut self.theme.text);
 
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    egui::CollapsingHeader::new(format!("Favorites ({})", self.favorites.len()))
-                        .default_open(true)
-                        .show(ui, |ui| {
-                            if self.favorites.len() > 0 {
+                                if ui.button("Reset").clicked() {
+                                    self.theme = Theme::default();
+                                }
+                            });
+                        }
+                    });
+
+                    ui.separator();
+
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        egui::CollapsingHeader::new(format!("Favorites ({})", self.favorites.len()))
+                            .default_open(true)
+                            .show(ui, |ui| {
+                                if self.favorites.len() > 0 {
+                                    self.game_grid(ui,
+                                        self.favorites.iter().filter_map(|app| {
+                                            if !self.hidden.contains(app) {
+                                                if self.search_filter.is_empty() {
+                                                    Some(app.clone())
+                                                } else if app.name.to_lowercase().contains(&self.search_filter) {
+                                                    Some(app.clone())
+                                                } else {
+                                                    None
+                                                }
+                                            } else {
+                                                None
+                                            }
+                                        }).collect::<Vec<AppID>>()
+                                    );
+                                }
+                            }
+                        );
+                        
+                        ui.separator();
+
+                        egui::CollapsingHeader::new(format!("All Games ({})", self.steam_model.games.len()))
+                            .default_open(true)
+                            .show(ui, |ui| {
                                 self.game_grid(ui,
-                                    self.favorites.iter().filter_map(|app| {
+                                    self.steam_model.get_installed_apps().iter().filter_map(|app| {
                                         if !self.hidden.contains(app) {
                                             if self.search_filter.is_empty() {
                                                 Some(app.clone())
@@ -293,45 +410,22 @@ impl eframe::App for App {
                                     }).collect::<Vec<AppID>>()
                                 );
                             }
-                        }
-                    );
-                    
-                    ui.separator();
+                        );
 
-                    egui::CollapsingHeader::new(format!("All Games ({})", self.steam_model.games.len()))
-                        .default_open(true)
-                        .show(ui, |ui| {
-                            self.game_grid(ui,
-                                self.steam_model.get_installed_apps().iter().filter_map(|app| {
-                                    if !self.hidden.contains(app) {
-                                        if self.search_filter.is_empty() {
-                                            Some(app.clone())
-                                        } else if app.name.to_lowercase().contains(&self.search_filter) {
-                                            Some(app.clone())
-                                        } else {
-                                            None
-                                        }
-                                    } else {
-                                        None
-                                    }
-                                }).collect::<Vec<AppID>>()
-                            );
-                        }
-                    );
+                        ui.separator();
 
-                    ui.separator();
-
-                    egui::CollapsingHeader::new(format!("Hidden ({})", self.hidden.len()))
-                        .default_open(true)
-                        .show(ui, |ui| {
-                            if self.hidden.len() > 0 {
-                                self.game_grid(ui, self.hidden.clone());
+                        egui::CollapsingHeader::new(format!("Hidden ({})", self.hidden.len()))
+                            .default_open(true)
+                            .show(ui, |ui| {
+                                if self.hidden.len() > 0 {
+                                    self.game_grid(ui, self.hidden.clone());
+                                }
                             }
-                        }
-                    );
+                        );
+                    });
                 });
-            });
-        });
+            }
+        );
     }
 }
 
@@ -381,9 +475,9 @@ impl App {
                     egui::Frame::default()
                         .fill(
                             if self.selected_app == Some(app.clone()) {
-                                Color32::from_rgb(255, 255, 255)
+                                self.theme.primary
                             } else {
-                                Color32::from_rgb(50, 50, 50)
+                                self.theme.background
                             }
                         )
                         .rounding(10.0)
@@ -412,6 +506,7 @@ impl App {
     fn game_context(&mut self, response: &egui::Response, app: &AppID) {
         response.context_menu(|ui| {
             if ui.button("Launch").clicked() {
+                self.toasts.info(format!("Launching {}", app.name));
                 steam_launch!(
                     self.steam_model,
                     self.saved_logins.get(app).expect("Game account was not properly initialized!"),
@@ -423,22 +518,26 @@ impl App {
             if self.favorites.contains(&app) {
                 if ui.button("Remove from Favorites").clicked() {
                     self.favorites.retain(|x| x != app);
+                    self.toasts.info(format!("Removed {} from favorites", app.name));
                     ui.close_menu();
                 }
             } else {
                 if ui.button("Add to Favorites").clicked() {
                     self.favorites.push(app.clone());
+                    self.toasts.info(format!("Added {} to favorites", app.name));
                     ui.close_menu();
                 }
             }
             if self.hidden.contains(&app) {
                 if ui.button("Unhide").clicked() {
                     self.hidden.retain(|x| x != app);
+                    self.toasts.info(format!("Unhidden {}", app.name));
                     ui.close_menu();
                 }
             } else {
                 if ui.button("Hide").clicked() {
                     self.hidden.push(app.clone());
+                    self.toasts.info(format!("Hidden {}", app.name));
                     ui.close_menu();
                 }
             }
