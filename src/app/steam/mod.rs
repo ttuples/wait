@@ -396,6 +396,7 @@ impl SteamModel {
                     std::process::Command::new(self.install_path.join("steam.exe"))
                         .args(args)
                         .spawn().unwrap();
+                    if close_after { std::process::exit(0); }
                     return Ok(());
                 }
                 return Err(e);
