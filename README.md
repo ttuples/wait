@@ -3,6 +3,7 @@ Simple lightweight and fast steam game launcher, with a focus on automatically s
 This is a niche application for people who have bought games across multiple accounts.
 
 ### Features
+- Main Feature: Remembers account selection for individual games
 - Standalone app (can be placed anywhere, save data is stored in appdata)
 - *Should* just work, the program will automatically detect all your installed games and accounts
 - Doesn't need to save passwords for the account switching (you have to use remember my login on steam)
@@ -12,7 +13,6 @@ This is a niche application for people who have bought games across multiple acc
 - Also serves as just an account switcher using the drop down in the top left and login button
 - Displays game thumbnails either in portrait or landscape
 - Selectable application exit parameter (after login/launch/both/none)
-- Remembers account selection individual games
 - Sort games by name or last played
 - Hide games
 
