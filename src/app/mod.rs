@@ -391,10 +391,10 @@ impl eframe::App for App {
                                 };
                                 if self.theme_popup {
                                     theme_popup(ui, &response, |ui| {
-                                        ui.color_edit_button_srgba(&mut self.theme.primary);
-                                        ui.color_edit_button_srgba(&mut self.theme.secondary);
-                                        ui.color_edit_button_srgba(&mut self.theme.background);
-                                        ui.color_edit_button_srgba(&mut self.theme.text);
+                                        ui.color_edit_button_srgba(&mut self.theme.primary).on_hover_text("Primary");
+                                        ui.color_edit_button_srgba(&mut self.theme.secondary).on_hover_text("Secondary");
+                                        ui.color_edit_button_srgba(&mut self.theme.background).on_hover_text("Background");
+                                        ui.color_edit_button_srgba(&mut self.theme.text).on_hover_text("Text");
         
                                         if ui.button("Reset").clicked() {
                                             self.theme = Theme::default();
