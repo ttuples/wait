@@ -2,6 +2,11 @@
 Simple lightweight and fast steam game launcher, with a focus on automatically signing you into the correct saved account selection.
 This is a niche application for people who have bought games across multiple accounts.
 
+### Amazing crates
+- [egui](https://crates.io/crates/eframe)
+- [egui-notify](https://crates.io/crates/egui-notify)
+- [egui_json_tree](https://crates.io/crates/egui_json_tree)
+
 ### Features
 - Main Feature: Remembers account selection for individual games
 - Standalone app (can be placed anywhere, save data is stored in appdata)
