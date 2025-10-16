@@ -323,15 +323,15 @@ impl SteamModel {
     /// Set the login account in registry
     /// 
     /// Sets the AutoLoginUser and RememberPassword values in the registry
-    pub fn set_login_account(&self, account: &SteamAccount) -> Result<()> {
+    pub fn set_login_account(&self, account: &String) -> Result<()> {
         let regkey = Hive::CurrentUser.open(STEAM_ROOT, Security::AllAccess)?;
 
-        if regkey.value("AutoLoginUser")?.to_string() == account.name {
+        if regkey.value("AutoLoginUser")?.to_string() == *account {
             return Err(Box::new(LoginError::AlreadyLoggedIn));
         }
 
         // Set AutoLoginUser and RememberPassword
-        let user_data: Data = Data::String(utfx::WideCString::from_str(&account.name).unwrap().into());
+        let user_data: Data = Data::String(utfx::WideCString::from_str(&account).unwrap().into());
         regkey.set_value("AutoLoginUser", &user_data)?;
         regkey.set_value("RememberPassword", &Data::U32(1))?;
 
@@ -374,7 +374,7 @@ impl SteamModel {
     /// Initiate a login with the provided account
     /// 
     /// this function will set the login account and start steam
-    pub fn login(&self, account: &SteamAccount, exit_after: bool) -> Result<()> {
+    pub fn login(&self, account: &String, exit_after: bool) -> Result<()> {
         match self.set_login_account(account) {
             Ok(_) => (),
             Err(e) => {
@@ -382,7 +382,7 @@ impl SteamModel {
             },
         }
 
-        eprintln!("Successfully set login account: {}", account.name);
+        eprintln!("Successfully set login account: {}", account);
 
         self.restart(None, exit_after)?;
 
@@ -392,7 +392,7 @@ impl SteamModel {
     /// Launch a game with the provided account and appid
     /// 
     /// this function will login to the account and start the game
-    pub fn launch_game(&self, account: &SteamAccount, appid: &i32, close_after: bool) -> Result<()> {
+    pub fn launch_game(&self, account: &String, appid: &i32, close_after: bool) -> Result<()> {
         let args = vec![
             "-applaunch".to_string(),
             appid.to_string(),

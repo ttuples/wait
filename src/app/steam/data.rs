@@ -38,12 +38,18 @@ impl SteamAccount {
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
-#[derive(Debug, Default, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub struct AppID {
     pub id: i32,
     pub name: String,
     pub location: PathBuf,
     pub last_played: Option<u64>,
+}
+
+impl std::hash::Hash for AppID {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Clone)]

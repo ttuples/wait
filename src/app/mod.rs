@@ -27,7 +27,7 @@ macro_rules! steam_launch {
 pub struct App {
     favorites: Vec<AppID>,
     hidden: Vec<AppID>,
-    saved_logins: HashMap<AppID, SteamAccount>,
+    saved_logins: HashMap<AppID, String>,
     thumbnail_mode: ThumbnailMode,
     grid_size: f32,
     close_after: CloseAfter,
@@ -39,7 +39,7 @@ pub struct App {
     #[serde(skip)]
     thumbnail_cache: HashMap<AppID, Thumbnail>,
     #[serde(skip)]
-    selected_account: SteamAccount,
+    selected_account: String,
     #[serde(skip)]
     selected_app: Option<AppID>,
     #[serde(skip)]
@@ -50,6 +50,8 @@ pub struct App {
     // toast_channel: (Sender<String>, Receiver<String>),
     #[serde(skip)]
     theme_popup: bool,
+    #[serde(skip)]
+    needs_save: bool,
 }
 
 impl Default for App {
@@ -66,10 +68,11 @@ impl Default for App {
             theme_popup: false,
             steam_model: SteamModel::default(),
             thumbnail_cache: HashMap::new(),
-            selected_account: SteamAccount::default(),
+            selected_account: String::default(),
             selected_app: None,
             search_filter: String::default(),
             toasts: Toasts::default(),
+            needs_save: false,
             // toast_channel: channel(),
         }
     }
@@ -180,14 +183,14 @@ impl App {
             app = eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
             app.steam_model = steam_model;
             app.thumbnail_cache = thumbnail_cache;
-            app.selected_account = selected_account;
+            app.selected_account = selected_account.name().to_string();
             log::info!("Restored state");
         } else {
             app = Self {
                 grid_size: 200.0,
                 steam_model,
                 thumbnail_cache,
-                selected_account,
+                selected_account: selected_account.name().to_string(),
                 ..Default::default()
             };
             log::info!("No persisted state found. Applying default state");
@@ -204,7 +207,7 @@ impl eframe::App for App {
         eframe::set_value(storage, eframe::APP_KEY, self);
     }
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         self.toasts.show(ctx);
 
         // Update theme
@@ -234,19 +237,19 @@ impl eframe::App for App {
 
                     egui::ComboBox::from_id_salt("Accounts")
                         .width(ui.available_width())
-                        .selected_text(format!("{}", self.selected_account.name()))
+                        .selected_text(format!("{}", self.selected_account))
                         .show_ui(ui, |ui| {
                             for steam_account in &self.steam_model.user_cache {
                                 ui.selectable_value(
                                     &mut self.selected_account,
-                                    steam_account.clone(),
+                                    steam_account.name().to_string(),
                                     steam_account.name(),
                                 );
                             }
                         });
                     
                     if ui.button("Login to Steam").clicked() {
-                        self.toasts.info(format!("Logging in as {}", self.selected_account.name()));
+                        self.toasts.info(format!("Logging in as {}", self.selected_account));
                         match self.steam_model.login(
                             &self.selected_account,
                             self.close_after == CloseAfter::Login || self.close_after == CloseAfter::Both
@@ -290,15 +293,16 @@ impl eframe::App for App {
 
                                 egui::ComboBox::from_id_salt("Game Account")
                                     .width(ui.available_width())
-                                    .selected_text(format!("{}", self.saved_logins.get(app).expect("Game account was not properly initialized!").name()))
+                                    .selected_text(format!("{}", self.saved_logins.get(app).expect("Game account was not properly initialized!")))
                                     .show_ui(ui, |ui| {
                                         for steam_account in &self.steam_model.user_cache {
                                             if ui.selectable_value(
                                                 &mut *self.saved_logins.get_mut(app).unwrap(),
-                                                steam_account.clone(),
+                                                steam_account.name.clone(),
                                                 steam_account.name(),
                                             ).clicked() {
                                                 self.toasts.info(format!("Updated game \"{}\" to account \"{}\"", app.name, steam_account.name()));
+                                                self.needs_save = true;
                                             }
                                         }
                                     });
@@ -436,11 +440,18 @@ impl eframe::App for App {
                 });
             }
         );
+
+        // Trigger save if needed
+        if self.needs_save {
+            if let Some(storage) = frame.storage_mut() {
+                self.save(storage);
+            }
+        }
     }
 }
 
 impl App {
-    fn get_thumbnail_image(&self, app: &AppID) -> egui::Image {
+    fn get_thumbnail_image(&'_ self, app: &AppID) -> egui::Image<'_> {
         let thumbnail: Thumbnail = self.thumbnail_cache.get(&app).unwrap_or(&Thumbnail::default()).clone();
 
         match self.thumbnail_mode {
