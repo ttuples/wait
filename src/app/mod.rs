@@ -196,6 +196,18 @@ impl App {
             log::info!("No persisted state found. Applying default state");
         }
         
+        // Initialize saved_logins for all detected games
+        for steam_account in &app.steam_model.user_cache {
+            for game in app.steam_model.get_installed_apps() {
+                // Check if this account owns this game and if no account is already assigned
+                if steam_account.games.contains(&game.id) && !app.saved_logins.contains_key(&game) {
+                    app.saved_logins.insert(game.clone(), steam_account.name().to_string());
+                }
+            }
+        }
+        
+        app.toasts.info(format!("Initialized saved_logins for {} games", app.saved_logins.len()));
+        
         app.toasts.info(format!("Application loaded in {}ms", created.elapsed().as_millis()));
 
         app
